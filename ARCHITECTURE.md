@@ -49,7 +49,7 @@ Inventory, movement history, sales and supplier records are stored in browser `l
 ## Current limitations
 
 - Reports are local to the browser profile and are not consolidated across devices or multiple shop users.
-- Hindi speech recognition and AI model calls are not connected.
+- Hindi/English text assistant answers from saved inventory, supplier and sales data using local rule-based matching. Browser Web Speech API provides optional speech input and speech playback where supported; microphone permission is required. No external AI model API is connected.
 - Supplier details and reorder planning are local only; no external supplier integration, purchase-order sending, barcode scanning or notifications.
 - No authentication or cloud database.
 - No product deletion action is provided in this phase.
@@ -61,7 +61,7 @@ Inventory, movement history, sales and supplier records are stored in browser `l
 3. Sales entry and gross profit tracking. (implemented in the current UI)
 4. Date-wise daily and monthly sales analytics. (implemented in the current UI)
 5. Supplier records and reorder workflow. (implemented in the current UI)
-6. Hindi voice/text assistant grounded in shop data.
+6. Hindi/English voice/text assistant grounded in shop data. (implemented with local rule-based answers and browser speech APIs)
 7. Authentication and cloud persistence, only after architecture approval.
 
 ## Implementation principles
