@@ -530,6 +530,35 @@ export default function Home() {
     setNotice("Profit & Loss CSV download start ho gaya.");
   }
 
+  function downloadBusinessBackup(){
+    const backup:StockSaathiBackup={app:"STOCKSAATHI_AI",backupVersion:1,exportedAt:new Date().toISOString(),data:{version:4,products,movements,sales,suppliers,expenses,monthlyExpenseBudget,reconciliationAudit}};
+    const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json;charset=utf-8;"});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement("a");link.href=url;link.download="stocksaathi-backup-"+today()+".json";document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+    setNotice("Business backup download start ho gaya. File ko safe jagah par rakhein.");
+  }
+
+  async function prepareBusinessRestore(event:React.ChangeEvent<HTMLInputElement>){
+    const file=event.target.files?.[0];event.target.value="";
+    if(!file)return;
+    try{
+      const parsed:unknown=JSON.parse(await file.text());
+      if(!isStockSaathiBackup(parsed)){setNotice("Ye valid STOCKSAATHI AI backup nahi hai ya file incomplete hai.");return;}
+      setPendingRestore(parsed);setRestoreFileName(file.name);
+    }catch{setNotice("Backup file read nahi hui. Valid JSON backup select karein.");}
+  }
+
+  function confirmBusinessRestore(){
+    if(!pendingRestore)return;
+    const data=pendingRestore.data;
+    const next={version:4,products:data.products,movements:data.movements,sales:data.sales,suppliers:data.suppliers,expenses:data.expenses,monthlyExpenseBudget:data.monthlyExpenseBudget,reconciliationAudit:data.reconciliationAudit.slice(0,500)};
+    try{window.localStorage.setItem(STORAGE_KEY,JSON.stringify(next));}
+    catch{setNotice("Restore save nahi ho saka. Device storage check karein.");return;}
+    setProducts(data.products.map(normalizeProduct));setMovements(data.movements);setSales(data.sales);setSuppliers(data.suppliers);setExpenses(data.expenses);setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));setReconciliationAudit(data.reconciliationAudit.slice(0,500));
+    setPendingStockAction(null);setPendingSaleAction(null);setPendingExpenseAction(null);setPendingReconciliationAction(null);setEditingExpenseId(null);setPendingRestore(null);setRestoreFileName("");
+    setNotice("Backup successfully restore ho gaya. Current device data selected backup se replace hua.");
+  }
+
   function downloadReconciliationAuditCsv(){
     if(auditFrom>auditTo){setNotice("Audit start date end date se pehle honi chahiye.");return;}
     const escapeCsv=(value:string|number)=>{let text=String(value);if(/^[=+@]/.test(text)||(/^-(?!\d+(?:\.\d+)?$)/.test(text))||text.startsWith("\t")||text.startsWith("\r"))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
