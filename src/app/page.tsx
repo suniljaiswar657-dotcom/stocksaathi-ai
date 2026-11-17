@@ -177,7 +177,7 @@ export default function Home() {
       return;
     }
     const productId=editingId??makeId(); const existing=products.find(item=>item.id===editingId); let batches=existing?[...existing.batches]:[{id:makeId(),batchNo:"OPENING",quantity,expiryDate:form.expiryDate,receivedAt:new Date().toISOString()}];
-    if(existing){let delta=quantity-existing.quantity;if(delta>0)batches.push({id:makeId(),batchNo:"MANUAL-ADJ",quantity:delta,expiryDate:form.expiryDate,receivedAt:new Date().toISOString()});if(delta<0){let left=-delta;batches=batches.sort((a,b)=>a.receivedAt.localeCompare(b.receivedAt)).map(batch=>{const take=Math.min(batch.quantity,left);left-=take;return {...batch,quantity:batch.quantity-take};});}}
+    if(existing){if(form.expiryDate!==existing.expiryDate){const target=batches.find(batch=>batch.quantity>0);if(target)batches=batches.map(batch=>batch.id===target.id?{...batch,expiryDate:form.expiryDate}:batch);}let delta=quantity-existing.quantity;if(delta>0)batches.push({id:makeId(),batchNo:"MANUAL-ADJ",quantity:delta,expiryDate:form.expiryDate,receivedAt:new Date().toISOString()});if(delta<0){let left=-delta;batches=batches.sort((a,b)=>a.receivedAt.localeCompare(b.receivedAt)).map(batch=>{const take=Math.min(batch.quantity,left);left-=take;return {...batch,quantity:batch.quantity-take};});}}
     const product: Product = {
       id: productId,
       name,
