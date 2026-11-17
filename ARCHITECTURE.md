@@ -19,12 +19,19 @@ A simple Hindi-first shop assistant for Indian small businesses. It helps shop o
 - Product create and edit form.
 - Quantity, unit, category, purchase price, selling price, low-stock threshold and expiry date.
 - Stock increment/decrement controls with a zero-stock guard.
+- Batch / lot receiving with per-batch quantity and expiry date.
+- Batch-wise expiry overview; product expiry status is derived from active batches.
+- Stock movement ledger for opening stock, manual receipts, reductions and quantity adjustments (latest 200 records).
 - Calculated stock value, low-stock status and expiry status.
 - Rule-based stock suggestions based on the saved inventory.
 
 ## Inventory storage boundary
 
-Inventory is stored in browser `localStorage` under `stocksaathi.inventory.v1`.
+Inventory and movement history are stored in browser `localStorage` under `stocksaathi.inventory.v2`.
+
+- Existing `stocksaathi.inventory.v1` product arrays are read and migrated into one `OPENING` batch per product; the old key is left intact.
+- Stock reductions consume oldest received batches first (FIFO).
+- Batch and movement history are local to the same browser profile/device; the movement ledger is capped at 200 entries.
 
 - Data persists across refreshes in the same browser profile.
 - Data is not synced between devices or users.
@@ -42,7 +49,7 @@ Inventory is stored in browser `localStorage` under `stocksaathi.inventory.v1`.
 ## Planned modules
 
 1. Dashboard and inventory.
-2. Stock movement history and batch-level expiry tracking.
+2. Stock movement history and batch-level expiry tracking. (implemented in the current UI)
 3. Sales entry and verified profit calculations.
 4. Supplier records and reorder workflow.
 5. Hindi voice/text assistant grounded in shop data.
