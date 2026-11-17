@@ -515,7 +515,7 @@ export default function Home() {
 
   function downloadReconciliationAuditCsv(){
     if(auditFrom>auditTo){setNotice("Audit start date end date se pehle honi chahiye.");return;}
-    const escapeCsv=(value:string|number)=>{let text=String(value);if(/^[=+@]/.test(text)||(/^-(?!\d+(?:\.\d+)?$/.test(text))||text.startsWith("\t")||text.startsWith("\r"))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
+    const escapeCsv=(value:string|number)=>{let text=String(value);if(/^[=+@]/.test(text)||(/^-(?!\d+(?:\.\d+)?$)/.test(text))||text.startsWith("\t")||text.startsWith("\r"))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
     const rows:string[][]=[["Timestamp (ISO 8601)","Date","Actor","Action","Issue type","Record ID","Summary"]];
     for(const entry of auditReportItems)rows.push([entry.at,entry.at.slice(0,10),entry.actor,entry.action,entry.issueType,entry.recordId,entry.summary]);
     rows.push(["","","","","","",""]);
