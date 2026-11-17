@@ -123,6 +123,7 @@ export default function Home() {
   const [assistantMessages,setAssistantMessages]=useState<{role:"assistant"|"user";text:string}[]>([{role:"assistant",text:"Namaste! Main aapke saved stock, sales, profit aur suppliers ke data se jawab de sakti hoon. Example: “Maggi ka stock kitna hai?” ya “Aaj ka profit batao.”"}]);
   const [isListening,setIsListening]=useState(false);
   const [stopSpeech,setStopSpeech]=useState<(()=>void)|null>(null);
+  const [pendingStockAction,setPendingStockAction]=useState<{productId:string;productName:string;quantity:number;direction:"IN"|"OUT"}|null>(null);
 
   useEffect(() => {
     try {
@@ -250,6 +251,50 @@ export default function Home() {
 
   const reorderSuggestions=products.filter(product=>product.quantity<=product.lowStockAt).map(product=>({...product,suggestedQty:Math.max(0,(product.reorderToLevel??Math.max(product.lowStockAt*2,product.lowStockAt+1))-product.quantity)})).filter(product=>product.suggestedQty>0);
 
+  function parseStockAction(raw:string):{product:Product;quantity:number;direction:"IN"|"OUT"}|null {
+    const q=raw.toLowerCase().replace(/[.,!?]/g," ").replace(/\\s+/g," ").trim();
+    const add=/\\b(add|เพิ่ม|receive|received|increase|restock|jama|jamaa|jod|daal|dalo|bhar|bharo|badha|badhao|aaya|aaye|add karo|stock mein)\\b/.test(q);
+    const remove=/\\b(remove|subtract|decrease|reduce|nikal|hata|ghata|ghatao|kam karo|minus|out)\\b/.test(q);
+    if(add===remove)return null;
+    const qtyMatch=q.match(/\\b(\\d+(?:\\.\\d+)?)\\b/);
+    if(!qtyMatch)return null;
+    const quantity=Number(qtyMatch[1]);if(!Number.isFinite(quantity)||quantity<=0)return null;
+    const product=products.filter(p=>q.includes(p.name.toLowerCase())).sort((a,b)=>b.name.length-a.name.length)[0];
+    if(!product)return null;
+    const afterName=q.slice(q.indexOf(product.name.toLowerCase())+product.name.length);
+    const unitMatch=afterName.match(/^\\s*(packets?|packs?|packet|pcs|pieces?|units?|kg|kgs|grams?|g|litres?|liters?|bottles?|boxes?|loaves?|pouches?)\\b/);
+    if(unitMatch){
+      const spokenUnit=unitMatch[1].toLowerCase().replace(/s$/,"");
+      const productUnit=product.unit.toLowerCase().replace(/s$/,"");
+      const aliases:Record<string,string>={pack:"packet",packs:"packet",pcs:"piece",pieces:"piece",unit:"unit",kg:"kg",kgs:"kg",gram:"gram",grams:"gram",g:"gram",litre:"litre",liter:"litre",bottle:"bottle",box:"box",loaf:"loaf",pouch:"pouch"};
+      if((aliases[spokenUnit]||spokenUnit)!==(aliases[productUnit]||productUnit))return null;
+    }
+    return {product,quantity,direction:add?"IN":"OUT"};
+  }
+
+  function processAssistantInput(raw:string){
+    const action=parseStockAction(raw);
+    if(action){
+      setPendingStockAction({productId:action.product.id,productName:action.product.name,quantity:action.quantity,direction:action.direction});
+      const verb=action.direction==="IN"?"add":"remove";
+      setAssistantMessages(current=>[...current,{role:"user",text:raw},{role:"assistant",text:"Confirmation required: "+action.quantity+" "+action.product.unit+" "+action.product.name+" ke stock mein "+verb+" honge. Current stock "+action.product.quantity+" "+action.product.unit+". Confirm karne ke baad hi inventory change hogi."}].slice(-30));
+      return;
+    }
+    const answer=answerShopQuestion(raw);
+    setAssistantMessages(current=>[...current,{role:"user",text:raw},{role:"assistant",text:answer}].slice(-30));
+  }
+
+  function confirmStockAction(){
+    if(!pendingStockAction)return;
+    const product=products.find(item=>item.id===pendingStockAction.productId);
+    if(!product){setNotice("Product ab inventory mein nahi mila. Action cancel kar diya.");setPendingStockAction(null);return;}
+    if(pendingStockAction.direction==="OUT"&&pendingStockAction.quantity>product.quantity){setNotice("Current stock sirf "+product.quantity+" "+product.unit+" hai. Action cancel.");setPendingStockAction(null);return;}
+    const amount=pendingStockAction.direction==="IN"?pendingStockAction.quantity:-pendingStockAction.quantity;
+    adjustStock(product,amount);
+    setAssistantMessages(current=>[...current,{role:"assistant",text:"Confirmed. "+product.name+" stock "+(amount>0?"increased":"reduced")+" by "+Math.abs(amount)+" "+product.unit+". New quantity: "+(product.quantity+amount)+" "+product.unit+"."}].slice(-30));
+    setPendingStockAction(null);
+  }
+
   function answerShopQuestion(raw:string):string {
     const q=raw.trim().toLowerCase();
     if(!q)return "Please apna question type ya bolkar batayein.";
@@ -280,8 +325,7 @@ export default function Home() {
 
   function submitAssistantQuestion(event?:FormEvent<HTMLFormElement>){
     event?.preventDefault();const question=assistantInput.trim();if(!question)return;
-    const answer=answerShopQuestion(question);
-    setAssistantMessages(current=>[...current,{role:"user",text:question},{role:"assistant",text:answer}].slice(-30));setAssistantInput("");
+    processAssistantInput(question);setAssistantInput("");
   }
 
   function handleVoice() {
@@ -292,7 +336,7 @@ export default function Home() {
     if(!Recognition){setNotice("Is browser mein voice recognition supported nahi. Text assistant use karein.");return;}
     if(isListening){stopSpeech?.();setIsListening(false);setStopSpeech(null);return;}
     const recognition=new Recognition();recognition.lang=assistantLanguage;recognition.interimResults=false;recognition.maxAlternatives=1;
-    recognition.onresult=(event)=>{const transcript=event.results[0]?.[0]?.transcript||"";if(transcript){setAssistantInput("");const answer=answerShopQuestion(transcript);setAssistantMessages(current=>[...current,{role:"user",text:transcript},{role:"assistant",text:answer}].slice(-30));if("speechSynthesis" in window){const utterance=new SpeechSynthesisUtterance(answer);utterance.lang=assistantLanguage;window.speechSynthesis.speak(utterance);}}};
+    recognition.onresult=(event)=>{const transcript=event.results[0]?.[0]?.transcript||"";if(transcript){setAssistantInput("");processAssistantInput(transcript);if("speechSynthesis" in window){const utterance=new SpeechSynthesisUtterance("Request received. Please check the screen and confirm before stock changes.");utterance.lang=assistantLanguage;window.speechSynthesis.speak(utterance);}}};
     recognition.onerror=()=>{setIsListening(false);setNotice("Voice capture nahi ho paya. Text se question pooch sakte hain.");};
     recognition.onend=()=>{setIsListening(false);setStopSpeech(null);};setStopSpeech(()=>()=>recognition.stop());setIsListening(true);recognition.start();
   }
@@ -368,6 +412,7 @@ export default function Home() {
                 <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Hindi + English shop assistant</h2><p className="mt-1 text-xs text-slate-400">Answers use this device's saved inventory and sales.</p></div><select value={assistantLanguage} onChange={e=>setAssistantLanguage(e.target.value as "hi-IN"|"en-IN")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"><option value="hi-IN">Hindi voice</option><option value="en-IN">English voice</option></select></div>
                 <div className="mt-5 max-h-[440px] min-h-[260px] space-y-3 overflow-y-auto rounded-xl bg-[#f8fbf8] p-3">{assistantMessages.map((message,index)=><div key={index} className={message.role==="user"?"ml-auto max-w-[88%] rounded-2xl rounded-br-sm bg-forest px-4 py-3 text-xs leading-5 text-white":"mr-auto max-w-[92%] rounded-2xl rounded-bl-sm border border-slate-100 bg-white px-4 py-3 text-xs leading-5 text-slate-700"}>{message.text}</div>)}</div>
                 <form onSubmit={submitAssistantQuestion} className="mt-4 flex gap-2"><input value={assistantInput} onChange={e=>setAssistantInput(e.target.value)} placeholder="Maggi stock kitna hai? / Today's profit?" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-forest"/><button type="submit" aria-label="Send question" className="rounded-xl bg-forest px-4 text-white"><Send size={17}/></button><button type="button" onClick={handleVoice} aria-label="Start voice input" className={isListening?"rounded-xl bg-amber-100 px-4 text-amber-800":"rounded-xl border border-slate-200 px-4 text-forest"}><Mic size={17}/></button></form>
+                {pendingStockAction ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-extrabold text-amber-900">Confirm inventory change</p><p className="mt-2 text-sm font-bold text-ink">{pendingStockAction.direction==="IN"?"Add":"Remove"} {pendingStockAction.quantity} {products.find(p=>p.id===pendingStockAction.productId)?.unit||"units"} — {pendingStockAction.productName}</p><p className="mt-1 text-xs text-slate-600">Current stock: {products.find(p=>p.id===pendingStockAction.productId)?.quantity??"Unavailable"} · After action: {((products.find(p=>p.id===pendingStockAction.productId)?.quantity??0)+(pendingStockAction.direction==="IN"?pendingStockAction.quantity:-pendingStockAction.quantity))}</p><div className="mt-3 flex gap-2"><button type="button" onClick={confirmStockAction} className="rounded-lg bg-forest px-4 py-2 text-xs font-bold text-white">Confirm change</button><button type="button" onClick={()=>{setPendingStockAction(null);setAssistantMessages(current=>[...current,{role:"assistant",text:"Cancelled. Inventory mein koi change nahi hua."}].slice(-30));}} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700">Cancel</button></div></div>:null}
                 <p className="mt-3 text-[10px] text-slate-400">{isListening?"Listening… Speak now.":"Voice needs browser support and microphone permission. Text mode always available."}</p>
               </div>
               <div className="space-y-4"><div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft"><h3 className="text-sm font-extrabold text-ink">Try asking</h3><div className="mt-3 space-y-2 text-xs text-slate-600"><p>• Maggi ka stock kitna hai?</p><p>• Which items are low stock?</p><p>• Aaj ki sales kitni hui?</p><p>• Total gross profit batao</p><p>• Amul milk ka supplier kaun hai?</p></div></div><div className="rounded-2xl bg-ink p-5 text-white"><div className="flex items-center gap-2"><Sparkles size={17}/><h3 className="text-sm font-extrabold">Data-grounded, not guesswork</h3></div><p className="mt-3 text-xs leading-5 text-white/70">Assistant saved products, quantities, supplier links aur recorded sales ko read karke calculations se jawab deta hai.</p><p className="mt-3 text-[10px] text-white/50">No external AI API, no extra cost, no cloud upload. Speech support browser par depend karta hai.</p></div></div>
