@@ -102,3 +102,11 @@ Inventory, movement history, sales, expenses and supplier records are stored in 
 - Prefer free/local development and Vercel-compatible hosting.
 - Do not introduce paid APIs, database services or external integrations without approved scope.
 - Clearly distinguish sample data from real records.
+
+
+## Backup/restore regression matrix
+
+- Run `npm run test:backup` to execute the Node.js built-in regression suite against the restore validator and restore-handler source contract.
+- The matrix covers checksum-free legacy version-4 backups, legacy batches without `unitCost`, stale/corrupt checksums, malformed checksum envelopes, invalid business dates/timestamps, duplicate product/batch IDs, batch-total mismatches, malformed cost layers, inconsistent sale arithmetic, orphan references, oversized files, malformed JSON, preview gating, storage read/write/read-back failures, rollback attempts, and the rule that React state updates only after persistence verification.
+- Restore failure handling is best-effort: the suite verifies that rollback is attempted and that the failure branch returns before state setters. Browser quota/security behavior and actual device storage are not simulated by this source-contract suite; a browser integration test remains necessary for full runtime confidence.
+- The suite is intentionally non-destructive and does not modify live shop data. It reads the source files and checks the restore flow's implemented safeguards.
