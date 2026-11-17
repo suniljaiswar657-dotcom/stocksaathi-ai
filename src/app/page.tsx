@@ -158,6 +158,7 @@ export default function Home() {
   const [batchForm,setBatchForm]=useState({batchNo:'',quantity:'1',expiryDate:''});
   const [hydrated, setHydrated] = useState(false);
   const [storageRecoveryMessage,setStorageRecoveryMessage]=useState("");
+  const [storageRecoveryHasData,setStorageRecoveryHasData]=useState(false);
   const [activeNav, setActiveNav] = useState("Overview");
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -225,16 +226,16 @@ export default function Home() {
         const message=recovered
           ?"Current inventory data file damaged hai. Older saved records recovery mode mein load hue hain. Automatic saving paused hai; pehle backup download karein, phir verified restore confirm karein."
           :"Saved inventory data damaged ya invalid hai. Existing files preserve ki gayi hain; demo data automatic save nahi hoga. Verified backup restore karein.";
-        setStorageRecoveryMessage(message);setNotice(message);
+        setStorageRecoveryHasData(recovered);setStorageRecoveryMessage(message);setNotice(message);
       }else if(recovered){
         if(stored.findIndex(item=>item.raw!==null)>0)setNotice("Older inventory version safely load hua. Current data local storage mein migrate hoga.");
       }else if(anyStored){
         const message="Saved inventory safely read nahi hui. Existing files preserve ki gayi hain; demo data automatic save nahi hoga. Verified backup restore karein.";
-        setStorageRecoveryMessage(message);setNotice(message);
+        setStorageRecoveryHasData(false);setStorageRecoveryMessage(message);setNotice(message);
       }
     }catch{
       const message="Browser storage access fail hua. Automatic saving paused hai; current stored data overwrite nahi kiya jayega.";
-      setStorageRecoveryMessage(message);setNotice(message);
+      setStorageRecoveryHasData(false);setStorageRecoveryMessage(message);setNotice(message);
     }finally{
       setHydrated(true);
     }
@@ -642,7 +643,7 @@ export default function Home() {
       setNotice("Restore save ya read-back verification fail hua. Existing data rollback attempt hua; UI data unchanged hai.");
       return;
     }
-    setProducts(data.products);setMovements(data.movements);setSuppliers(data.suppliers);setSales(data.sales);setExpenses(data.expenses);setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));setReconciliationAudit(data.reconciliationAudit.slice(0,500));setStorageRecoveryMessage("");
+    setProducts(data.products);setMovements(data.movements);setSuppliers(data.suppliers);setSales(data.sales);setExpenses(data.expenses);setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));setReconciliationAudit(data.reconciliationAudit.slice(0,500));setStorageRecoveryHasData(true);setStorageRecoveryMessage("");
     setPendingStockAction(null);setPendingSaleAction(null);setPendingExpenseAction(null);setPendingReconciliationAction(null);setEditingExpenseId(null);setPendingRestore(null);setRestoreFileName("");
     setNotice(pendingRestore.integrity?"Backup SHA-256 verified, restore saved and read-back verified successfully.":"Legacy backup structurally validated; restore saved and read-back verified. No SHA-256 checksum was present in this older file.");
   }
@@ -851,9 +852,9 @@ export default function Home() {
           </header>
 
           <div className="mx-auto max-w-[1440px] px-4 py-7 sm:px-8 sm:py-9">
-            {storageRecoveryMessage?<section role="alert" className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-xs leading-5 text-amber-950"><p className="font-extrabold">Data recovery mode — automatic saving paused</p><p className="mt-1">{storageRecoveryMessage}</p><p className="mt-1">Current saved files ko overwrite nahi kiya gaya. Pehle full backup download karein ya trusted backup file validate karke confirmation se restore karein.</p></section>:null}
+            {storageRecoveryMessage?<section role="alert" className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-xs leading-5 text-amber-950"><p className="font-extrabold">Data recovery mode — automatic saving paused</p><p className="mt-1">{storageRecoveryMessage}</p><p className="mt-1">Current saved files ko overwrite nahi kiya gaya. {storageRecoveryHasData?"Recovered records ka backup download karein, phir trusted backup restore kar sakte hain.":"Demo data ka backup disabled hai. Trusted backup file select karke validation aur confirmation se restore karein."}</p></section>:null}
             <section className="mb-6 rounded-2xl border border-[#e4eee5] bg-white p-4 shadow-soft sm:p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-extrabold text-ink">Business Data Backup & Restore</h2><p className="mt-1 text-[11px] leading-5 text-slate-500">Inventory, batches, stock history, sales, suppliers, expenses, budget aur reconciliation audit ka local JSON backup.</p></div><button type="button" onClick={downloadBusinessBackup} disabled={!hydrated} className="rounded-xl bg-forest px-4 py-3 text-xs font-bold text-white disabled:opacity-40">Download full backup</button></div>
+              <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-extrabold text-ink">Business Data Backup & Restore</h2><p className="mt-1 text-[11px] leading-5 text-slate-500">Inventory, batches, stock history, sales, suppliers, expenses, budget aur reconciliation audit ka local JSON backup.</p></div><button type="button" onClick={downloadBusinessBackup} disabled={!hydrated||(!!storageRecoveryMessage&&!storageRecoveryHasData)} className="rounded-xl bg-forest px-4 py-3 text-xs font-bold text-white disabled:opacity-40">Download full backup</button></div>
               <div className="mt-3 flex flex-wrap items-center gap-3"><label className="text-[11px] font-semibold text-slate-600">Select backup file<input type="file" accept=".json,application/json" disabled={!hydrated} onChange={prepareBusinessRestore} className="mt-1 block max-w-full text-[11px] text-slate-500 file:mr-2 file:rounded-lg file:border-0 file:bg-[#edf5ee] file:px-3 file:py-2 file:text-[10px] file:font-bold file:text-forest"/></label><p className="text-[10px] text-slate-400">Restore se pehle file validate hogi; bina confirmation current data change nahi hoga.</p></div>
               {pendingRestore?<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3"><p className="text-xs font-extrabold text-amber-900">Restore confirmation required</p><p className="mt-1 text-[11px] text-amber-800">File: {restoreFileName} · Backup date: {new Date(pendingRestore.exportedAt).toLocaleString()} · <span className="font-bold text-emerald-700">{pendingRestore.integrity?"SHA-256 verified":"Legacy backup · no checksum"}</span></p><p className="mt-1 text-[11px] text-amber-800">Products: {pendingRestore.data.products.length} · Sales: {pendingRestore.data.sales.length} · Expenses: {pendingRestore.data.expenses.length} · Suppliers: {pendingRestore.data.suppliers.length} · Audit events: {pendingRestore.data.reconciliationAudit.length}</p><p className="mt-2 text-[11px] font-semibold text-amber-900">Confirm karne par is browser ka existing inventory, sales, expenses aur audit data selected backup se replace hoga. Pehle current data ka backup download karna recommended hai.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={confirmBusinessRestore} className="rounded-lg bg-amber-800 px-3 py-2 text-[10px] font-bold text-white">Confirm restore & replace data</button><button type="button" onClick={()=>{setPendingRestore(null);setRestoreFileName("");}} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-[10px] font-bold text-amber-900">Cancel</button></div></div>:null}
               <p className="mt-3 text-[10px] leading-4 text-slate-400">Backup isi device/browser ke local data se banta hai. File ko safe location par manually save karein. Ye cloud sync nahi hai; backup mein shop ka sensitive business data ho sakta hai.</p>
