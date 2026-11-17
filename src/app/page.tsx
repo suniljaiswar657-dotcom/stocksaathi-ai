@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   Activity, ArrowDownRight, ArrowUpRight, Bell, Boxes, CalendarClock,
   Check, ChevronDown, CircleHelp, Command, LayoutDashboard,
@@ -162,7 +162,7 @@ export default function Home() {
   useEffect(() => {
     try {
       const saved=window.localStorage.getItem(STORAGE_KEY); const previous=window.localStorage.getItem(PREVIOUS_STORAGE_KEY); const older=window.localStorage.getItem(OLDER_STORAGE_KEY); const legacy=window.localStorage.getItem(LEGACY_STORAGE_KEY); const source=saved||previous||older||legacy;
-      if(source){ const parsed:unknown=JSON.parse(source); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)&&"products" in parsed){const data=parsed as {products:Product[];movements?:StockMovement[];sales?:Sale[];suppliers?:Supplier[];expenses?:Expense[];monthlyExpenseBudget?:number;reconciliationAudit?:ReconciliationAuditEntry[]};if(Array.isArray(data.products))setProducts(data.products.map(normalizeProduct));if(Array.isArray(data.movements))setMovements(data.movements);if(Array.isArray(data.sales))setSales(data.sales);if(Array.isArray(data.suppliers))setSuppliers(data.suppliers);if(Array.isArray(data.expenses))setExpenses(data.expenses);if(Array.isArray(data.reconciliationAudit))setReconciliationAudit(data.reconciliationAudit.slice(0,500));if(typeof data.monthlyExpenseBudget==="number"&&Number.isFinite(data.monthlyExpenseBudget)&&data.monthlyExpenseBudget>=0){setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));}}else if(Array.isArray(parsed)){setProducts((parsed as Product[]).map(normalizeProduct));setNotice("Purana inventory safely migrate ho gaya. Existing products preserve hain.");}}
+      if(source){ const parsed:unknown=JSON.parse(source); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)&&"products" in parsed){const data=parsed as {products:Product[];movements?:StockMovement[];sales?:Sale[];suppliers?:Supplier[];expenses?:Expense[];monthlyExpenseBudget?:number;reconciliationAudit?:ReconciliationAuditEntry[]};if(Array.isArray(data.products))setProducts(data.products);if(Array.isArray(data.movements))setMovements(data.movements);if(Array.isArray(data.sales))setSales(data.sales);if(Array.isArray(data.suppliers))setSuppliers(data.suppliers);if(Array.isArray(data.expenses))setExpenses(data.expenses);if(Array.isArray(data.reconciliationAudit))setReconciliationAudit(data.reconciliationAudit.slice(0,500));if(typeof data.monthlyExpenseBudget==="number"&&Number.isFinite(data.monthlyExpenseBudget)&&data.monthlyExpenseBudget>=0){setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));}}else if(Array.isArray(parsed)){setProducts((parsed as Product[]).map(normalizeProduct));setNotice("Purana inventory safely migrate ho gaya. Existing products preserve hain.");}}
     } catch {
       setNotice("Saved inventory could not be read. Demo data is shown.");
     } finally {
@@ -538,7 +538,7 @@ export default function Home() {
     setNotice("Business backup download start ho gaya. File ko safe jagah par rakhein.");
   }
 
-  async function prepareBusinessRestore(event:React.ChangeEvent<HTMLInputElement>){
+  async function prepareBusinessRestore(event:ChangeEvent<HTMLInputElement>){
     const file=event.target.files?.[0];event.target.value="";
     if(!file)return;
     try{
