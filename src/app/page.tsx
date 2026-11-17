@@ -124,6 +124,7 @@ export default function Home() {
   const [isListening,setIsListening]=useState(false);
   const [stopSpeech,setStopSpeech]=useState<(()=>void)|null>(null);
   const [pendingStockAction,setPendingStockAction]=useState<{productId:string;productName:string;quantity:number;direction:"IN"|"OUT"}|null>(null);
+  const [pendingSaleAction,setPendingSaleAction]=useState<{productId:string;productName:string;quantity:number;unitPrice:number}|null>(null);
 
   useEffect(() => {
     try {
@@ -273,7 +274,68 @@ export default function Home() {
     return {product,quantity,direction:add?"IN":"OUT"};
   }
 
+  function parseNaturalSale(raw:string):{product:Product;quantity:number;unitPrice:number}|null {
+    const q=raw.toLowerCase().replace(/,/g," ").replace(/\\s+/g," ").trim();
+    if(!/\\b(sell|sold|sale|becho| बेचो|bikri|nikaal do)\\b/.test(q))return null;
+    const candidates=products.map(product=>({product,matched:product.name.toLowerCase().split(/[^a-z0-9]+/).filter(word=>word.length>2&&q.includes(word)).sort((x,y)=>y.length-x.length)[0]||""})).filter(item=>item.matched).sort((x,y)=>y.matched.length-x.matched.length);
+    if(!candidates.length||(candidates.length>1&&candidates[0].matched.length===candidates[1].matched.length))return null;
+    const product=candidates[0].product;
+    const nameIndex=q.indexOf(candidates[0].matched);
+    const beforeName=q.slice(0,nameIndex);
+    const afterName=q.slice(nameIndex+candidates[0].matched.length);
+    const currencyPrice=q.match(/(?:₹|rs\\.?|rupees?\\s*)(\\d+(?:\\.\\d+)?)/);
+    const suffixPrice=q.match(/(\\d+(?:\\.\\d+)?)\\s*(?:rupees?|rs\\.?)/);
+    const priceMatch=currencyPrice||suffixPrice;
+    if(!priceMatch)return null;
+    const unitPrice=Number(priceMatch[1]);
+    if(!Number.isFinite(unitPrice)||unitPrice<=0)return null;
+    const priceToken=priceMatch[0];
+    const withoutPrice=q.replace(priceToken," ");
+    const withoutProduct=withoutPrice.replaceAll(candidates[0].matched," ");
+    const numbers=[...withoutProduct.matchAll(/\\b(\\d+(?:\\.\\d+)?)\\b/g)];
+    const quantityToken=numbers[0]?.[1];
+    const quantity=Number(quantityToken);
+    if(!Number.isFinite(quantity)||quantity<=0)return null;
+    const unitMatch=q.match(/\\b(packets?|packs?|packet|pcs|pieces?|units?|kg|kgs|grams?|g|litres?|liters?|bottles?|boxes?|loaves?|pouches?)\\b/);
+    if(unitMatch){
+      const aliases:Record<string,string>={pack:"pack",packs:"pack",packet:"packet",packets:"packet",pcs:"piece",pieces:"piece",piece:"piece",units:"unit",unit:"unit",kg:"kg",kgs:"kg",gram:"gram",grams:"gram",g:"gram",litre:"litre",litres:"litre",liter:"litre",liters:"litre",bottle:"bottle",bottles:"bottle",box:"box",boxes:"box",loaf:"loaf",loaves:"loaf",pouch:"pouch",pouches:"pouch"};
+      const spoken=aliases[unitMatch[1]]||unitMatch[1];
+      const saved=aliases[product.unit.toLowerCase()]||product.unit.toLowerCase().replace(/s$/,"");
+      if(spoken!==saved)return null;
+    }
+    return {product,quantity,unitPrice};
+  }
+
+  function confirmAssistantSale(){
+    if(!pendingSaleAction)return;
+    const product=products.find(item=>item.id===pendingSaleAction.productId);
+    if(!product){setNotice("Product ab inventory mein nahi mila. Sale cancel.");setPendingSaleAction(null);return;}
+    const {quantity,unitPrice}=pendingSaleAction;
+    if(quantity>product.quantity){setNotice("Current stock sirf "+product.quantity+" "+product.unit+" hai. Sale cancel.");setPendingSaleAction(null);return;}
+    const remainingAfter=product.quantity-quantity;
+    let remaining=quantity;
+    const batches=[...product.batches].sort((x,y)=>x.receivedAt.localeCompare(y.receivedAt)).map(batch=>{const used=Math.min(batch.quantity,remaining);remaining-=used;return {...batch,quantity:batch.quantity-used};});
+    const revenue=quantity*unitPrice;
+    const cost=quantity*product.costPrice;
+    const sale:Sale={id:makeId(),productId:product.id,productName:product.name,quantity,unit:product.unit,unitPrice,unitCost:product.costPrice,revenue,cost,profit:revenue-cost,soldAt:today()};
+    const updated=normalizeProduct({...product,batches,quantity:sumBatches(batches)});
+    setProducts(current=>current.map(item=>item.id===product.id?updated:item));
+    setSales(current=>[sale,...current].slice(0,1000));
+    setMovements(current=>[{id:makeId(),productId:product.id,productName:product.name,type:"OUT",quantity,note:"Assistant sale confirmed · "+formatMoney(revenue),at:new Date().toISOString()},...current].slice(0,200));
+    setAssistantMessages(current=>[...current,{role:"assistant",text:"Sale confirmed and saved: "+quantity+" "+product.unit+" "+product.name+" × "+formatMoney(unitPrice)+". Revenue "+formatMoney(revenue)+", product cost "+formatMoney(cost)+", gross profit "+formatMoney(sale.profit)+". Remaining stock "+remainingAfter+" "+product.unit+"."}].slice(-30));
+    setPendingSaleAction(null);
+    setNotice("Sale saved. Gross profit: "+formatMoney(sale.profit));
+  }
+
   function processAssistantInput(raw:string){
+    const saleAction=parseNaturalSale(raw);
+    if(saleAction){
+      setPendingSaleAction({productId:saleAction.product.id,productName:saleAction.product.name,quantity:saleAction.quantity,unitPrice:saleAction.unitPrice});
+      const revenue=saleAction.quantity*saleAction.unitPrice;
+      const profit=revenue-saleAction.quantity*saleAction.product.costPrice;
+      setAssistantMessages(current=>[...current,{role:"user",text:raw},{role:"assistant",text:"Sale confirmation required: "+saleAction.quantity+" "+saleAction.product.unit+" "+saleAction.product.name+" at "+formatMoney(saleAction.unitPrice)+" each. Revenue "+formatMoney(revenue)+", estimated gross profit "+formatMoney(profit)+". Current stock "+saleAction.product.quantity+" "+saleAction.product.unit+". Confirm karne par sale save hogi aur FIFO stock deduct hoga."}].slice(-30));
+      return;
+    }
     const action=parseStockAction(raw);
     if(action){
       setPendingStockAction({productId:action.product.id,productName:action.product.name,quantity:action.quantity,direction:action.direction});
@@ -413,6 +475,7 @@ export default function Home() {
                 <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Hindi + English shop assistant</h2><p className="mt-1 text-xs text-slate-400">Answers use this device's saved inventory and sales.</p></div><select value={assistantLanguage} onChange={e=>setAssistantLanguage(e.target.value as "hi-IN"|"en-IN")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"><option value="hi-IN">Hindi voice</option><option value="en-IN">English voice</option></select></div>
                 <div className="mt-5 max-h-[440px] min-h-[260px] space-y-3 overflow-y-auto rounded-xl bg-[#f8fbf8] p-3">{assistantMessages.map((message,index)=><div key={index} className={message.role==="user"?"ml-auto max-w-[88%] rounded-2xl rounded-br-sm bg-forest px-4 py-3 text-xs leading-5 text-white":"mr-auto max-w-[92%] rounded-2xl rounded-bl-sm border border-slate-100 bg-white px-4 py-3 text-xs leading-5 text-slate-700"}>{message.text}</div>)}</div>
                 <form onSubmit={submitAssistantQuestion} className="mt-4 flex gap-2"><input value={assistantInput} onChange={e=>setAssistantInput(e.target.value)} placeholder="Maggi stock kitna hai? / Today's profit?" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-forest"/><button type="submit" aria-label="Send question" className="rounded-xl bg-forest px-4 text-white"><Send size={17}/></button><button type="button" onClick={handleVoice} aria-label="Start voice input" className={isListening?"rounded-xl bg-amber-100 px-4 text-amber-800":"rounded-xl border border-slate-200 px-4 text-forest"}><Mic size={17}/></button></form>
+                {pendingSaleAction ? <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-extrabold text-emerald-900">Confirm sale</p><p className="mt-2 text-sm font-bold text-ink">{pendingSaleAction.quantity} {products.find(p=>p.id===pendingSaleAction.productId)?.unit||"units"} — {pendingSaleAction.productName}</p><p className="mt-1 text-xs text-slate-700">Selling price: {formatMoney(pendingSaleAction.unitPrice)} each · Revenue: {formatMoney(pendingSaleAction.quantity*pendingSaleAction.unitPrice)}</p><p className="mt-1 text-xs text-slate-700">Product cost: {formatMoney(pendingSaleAction.quantity*(products.find(p=>p.id===pendingSaleAction.productId)?.costPrice||0))} · Gross profit: {formatMoney(pendingSaleAction.quantity*(pendingSaleAction.unitPrice-(products.find(p=>p.id===pendingSaleAction.productId)?.costPrice||0)))}</p><p className="mt-1 text-xs text-slate-600">Available: {products.find(p=>p.id===pendingSaleAction.productId)?.quantity??"Unavailable"} · After sale: {Math.max(0,(products.find(p=>p.id===pendingSaleAction.productId)?.quantity??0)-pendingSaleAction.quantity)}</p><div className="mt-3 flex gap-2"><button type="button" onClick={confirmAssistantSale} className="rounded-lg bg-forest px-4 py-2 text-xs font-bold text-white">Confirm sale</button><button type="button" onClick={()=>{setPendingSaleAction(null);setAssistantMessages(current=>[...current,{role:"assistant",text:"Sale cancelled. Stock aur sales record unchanged hain."}].slice(-30));}} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700">Cancel</button></div></div>:null}
                 {pendingStockAction ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-extrabold text-amber-900">Confirm inventory change</p><p className="mt-2 text-sm font-bold text-ink">{pendingStockAction.direction==="IN"?"Add":"Remove"} {pendingStockAction.quantity} {products.find(p=>p.id===pendingStockAction.productId)?.unit||"units"} — {pendingStockAction.productName}</p><p className="mt-1 text-xs text-slate-600">Current stock: {products.find(p=>p.id===pendingStockAction.productId)?.quantity??"Unavailable"} · After action: {((products.find(p=>p.id===pendingStockAction.productId)?.quantity??0)+(pendingStockAction.direction==="IN"?pendingStockAction.quantity:-pendingStockAction.quantity))}</p><div className="mt-3 flex gap-2"><button type="button" onClick={confirmStockAction} className="rounded-lg bg-forest px-4 py-2 text-xs font-bold text-white">Confirm change</button><button type="button" onClick={()=>{setPendingStockAction(null);setAssistantMessages(current=>[...current,{role:"assistant",text:"Cancelled. Inventory mein koi change nahi hua."}].slice(-30));}} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700">Cancel</button></div></div>:null}
                 <p className="mt-3 text-[10px] text-slate-400">{isListening?"Listening… Speak now.":"Voice needs browser support and microphone permission. Text mode always available."}</p>
               </div>
