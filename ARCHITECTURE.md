@@ -49,7 +49,8 @@ Inventory, movement history, sales and supplier records are stored in browser `l
 ## Current limitations
 
 - Reports are local to the browser profile and are not consolidated across devices or multiple shop users.
-- Hindi/English text assistant answers from saved inventory, supplier and sales data using local rule-based matching. Browser Web Speech API provides optional speech input and speech playback where supported; microphone permission is required. No external AI model API is connected.
+- Hindi/English text assistant answers from saved inventory, supplier and sales data using local rule-based matching.
+- Natural-language stock IN/OUT requests are parsed against exact saved product names and quantities; proposed changes remain pending until the user explicitly confirms. Confirmed changes reuse the stock adjustment and movement ledger logic; cancellation makes no inventory change. Browser Web Speech API provides optional speech input and speech playback where supported; microphone permission is required. No external AI model API is connected.
 - Supplier details and reorder planning are local only; no external supplier integration, purchase-order sending, barcode scanning or notifications.
 - No authentication or cloud database.
 - No product deletion action is provided in this phase.
