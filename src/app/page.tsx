@@ -122,6 +122,7 @@ export default function Home() {
   const [assistantLanguage,setAssistantLanguage]=useState<"hi-IN"|"en-IN">("hi-IN");
   const [assistantMessages,setAssistantMessages]=useState<{role:"assistant"|"user";text:string}[]>([{role:"assistant",text:"Namaste! Main aapke saved stock, sales, profit aur suppliers ke data se jawab de sakti hoon. Example: “Maggi ka stock kitna hai?” ya “Aaj ka profit batao.”"}]);
   const [isListening,setIsListening]=useState(false);
+  const [stopSpeech,setStopSpeech]=useState<(()=>void)|null>(null);
 
   useEffect(() => {
     try {
@@ -289,11 +290,11 @@ export default function Home() {
     type SpeechWindow=Window&{SpeechRecognition?:new()=>SpeechRecognitionLike;webkitSpeechRecognition?:new()=>SpeechRecognitionLike};
     const speechWindow=window as SpeechWindow;const Recognition=speechWindow.SpeechRecognition||speechWindow.webkitSpeechRecognition;
     if(!Recognition){setNotice("Is browser mein voice recognition supported nahi. Text assistant use karein.");return;}
-    if(isListening){setIsListening(false);return;}
+    if(isListening){stopSpeech?.();setIsListening(false);setStopSpeech(null);return;}
     const recognition=new Recognition();recognition.lang=assistantLanguage;recognition.interimResults=false;recognition.maxAlternatives=1;
-    recognition.onresult=(event)=>{const transcript=event.results[0]?.[0]?.transcript||"";if(transcript){setAssistantInput(transcript);const answer=answerShopQuestion(transcript);setAssistantMessages(current=>[...current,{role:"user",text:transcript},{role:"assistant",text:answer}].slice(-30));if("speechSynthesis" in window){const utterance=new SpeechSynthesisUtterance(answer);utterance.lang=assistantLanguage;window.speechSynthesis.speak(utterance);}}};
+    recognition.onresult=(event)=>{const transcript=event.results[0]?.[0]?.transcript||"";if(transcript){setAssistantInput("");const answer=answerShopQuestion(transcript);setAssistantMessages(current=>[...current,{role:"user",text:transcript},{role:"assistant",text:answer}].slice(-30));if("speechSynthesis" in window){const utterance=new SpeechSynthesisUtterance(answer);utterance.lang=assistantLanguage;window.speechSynthesis.speak(utterance);}}};
     recognition.onerror=()=>{setIsListening(false);setNotice("Voice capture nahi ho paya. Text se question pooch sakte hain.");};
-    recognition.onend=()=>setIsListening(false);setIsListening(true);recognition.start();
+    recognition.onend=()=>{setIsListening(false);setStopSpeech(null);};setStopSpeech(()=>()=>recognition.stop());setIsListening(true);recognition.start();
   }
 
   return (
