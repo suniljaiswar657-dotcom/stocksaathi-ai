@@ -253,21 +253,22 @@ export default function Home() {
 
   function parseStockAction(raw:string):{product:Product;quantity:number;direction:"IN"|"OUT"}|null {
     const q=raw.toLowerCase().replace(/[.,!?]/g," ").replace(/\\s+/g," ").trim();
-    const add=/\\b(add|เพิ่ม|receive|received|increase|restock|jama|jamaa|jod|daal|dalo|bhar|bharo|badha|badhao|aaya|aaye|add karo|stock mein)\\b/.test(q);
+    const add=/\\b(add|receive|received|increase|restock|jama|jamaa|jod|daal|dalo|bhar|bharo|badha|badhao|aaya|aaye)\\b/.test(q);
     const remove=/\\b(remove|subtract|decrease|reduce|nikal|hata|ghata|ghatao|kam karo|minus|out)\\b/.test(q);
     if(add===remove)return null;
-    const qtyMatch=q.match(/\\b(\\d+(?:\\.\\d+)?)\\b/);
-    if(!qtyMatch)return null;
-    const quantity=Number(qtyMatch[1]);if(!Number.isFinite(quantity)||quantity<=0)return null;
-    const product=products.filter(p=>q.includes(p.name.toLowerCase())).sort((a,b)=>b.name.length-a.name.length)[0];
-    if(!product)return null;
-    const afterName=q.slice(q.indexOf(product.name.toLowerCase())+product.name.length);
-    const unitMatch=afterName.match(/^\\s*(packets?|packs?|packet|pcs|pieces?|units?|kg|kgs|grams?|g|litres?|liters?|bottles?|boxes?|loaves?|pouches?)\\b/);
+    const candidates=products.map(product=>({product,matched:product.name.toLowerCase().split(/[^a-z0-9]+/).filter(word=>word.length>2&&q.includes(word)).sort((a,b)=>b.length-a.length)[0]||""})).filter(item=>item.matched).sort((a,b)=>b.matched.length-a.matched.length);
+    if(!candidates.length||(candidates.length>1&&candidates[0].matched.length===candidates[1].matched.length))return null;
+    const product=candidates[0].product;
+    const withoutName=q.replace(product.name.toLowerCase()," ").replace(new RegExp("\\b"+candidates[0].matched+"\\b","g")," ");
+    const quantityMatch=withoutName.match(/\\b(\\d+(?:\\.\\d+)?)\\b/);
+    if(!quantityMatch)return null;
+    const quantity=Number(quantityMatch[1]);if(!Number.isFinite(quantity)||quantity<=0)return null;
+    const unitMatch=q.match(/\\b(packets?|packs?|packet|pcs|pieces?|units?|kg|kgs|grams?|g|litres?|liters?|bottles?|boxes?|loaves?|pouches?)\\b/);
     if(unitMatch){
-      const spokenUnit=unitMatch[1].toLowerCase().replace(/s$/,"");
-      const productUnit=product.unit.toLowerCase().replace(/s$/,"");
-      const aliases:Record<string,string>={pack:"packet",packs:"packet",pcs:"piece",pieces:"piece",unit:"unit",kg:"kg",kgs:"kg",gram:"gram",grams:"gram",g:"gram",litre:"litre",liter:"litre",bottle:"bottle",box:"box",loaf:"loaf",pouch:"pouch"};
-      if((aliases[spokenUnit]||spokenUnit)!==(aliases[productUnit]||productUnit))return null;
+      const aliases:Record<string,string>={pack:"packet",packs:"packet",packet:"packet",packets:"packet",pcs:"piece",pieces:"piece",piece:"piece",units:"unit",unit:"unit",kg:"kg",kgs:"kg",gram:"gram",grams:"gram",g:"gram",litre:"litre",litres:"litre",liter:"litre",liters:"litre",bottle:"bottle",bottles:"bottle",box:"box",boxes:"box",loaf:"loaf",loaves:"loaf",pouch:"pouch",pouches:"pouch"};
+      const spoken=aliases[unitMatch[1]]||unitMatch[1];
+      const saved=aliases[product.unit.toLowerCase()]||product.unit.toLowerCase().replace(/s$/,"");
+      if(spoken!==saved)return null;
     }
     return {product,quantity,direction:add?"IN":"OUT"};
   }
