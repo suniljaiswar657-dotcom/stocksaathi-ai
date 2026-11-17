@@ -21,15 +21,19 @@ A simple Hindi-first shop assistant for Indian small businesses. It helps shop o
 - Stock increment/decrement controls with a zero-stock guard.
 - Batch / lot receiving with per-batch quantity and expiry date.
 - Batch-wise expiry overview; product expiry status is derived from active batches.
-- Stock movement ledger for opening stock, manual receipts, reductions and quantity adjustments (latest 200 records).
+- Stock movement ledger for opening stock, manual receipts, reductions, quantity adjustments and sale deductions (latest 200 records).
+- Sales entry captures product, quantity, per-unit selling price and sale date; successful sales reduce stock using FIFO.
+- Sales history stores up to 1,000 transactions with revenue, cost-of-goods-sold and gross profit snapshots.
+- Sales summary reports total revenue, cost of goods sold and gross profit from recorded transactions.
 - Calculated stock value, low-stock status and expiry status.
 - Rule-based stock suggestions based on the saved inventory.
 
 ## Inventory storage boundary
 
-Inventory and movement history are stored in browser `localStorage` under `stocksaathi.inventory.v2`.
+Inventory, movement history and sales are stored in browser `localStorage` under `stocksaathi.inventory.v3`.
 
-- Existing `stocksaathi.inventory.v1` product arrays are read and migrated into one `OPENING` batch per product; the old key is left intact.
+- Existing `stocksaathi.inventory.v1` product arrays and `stocksaathi.inventory.v2` records are read during migration; old keys are left intact.
+- Sales store the product purchase-cost snapshot at the time of sale. Gross profit = (unit selling price − unit cost) × quantity; this is gross product profit before overheads, tax, fees or discounts.
 - Stock reductions consume oldest received batches first (FIFO).
 - Batch and movement history are local to the same browser profile/device; the movement ledger is capped at 200 entries.
 
