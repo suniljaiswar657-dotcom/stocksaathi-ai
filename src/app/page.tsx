@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Activity, ArrowDownRight, ArrowUpRight, Bell, Boxes, CalendarClock,
   Check, ChevronDown, CircleHelp, Command, LayoutDashboard,
-  Menu, Mic, PackagePlus, Pencil, Plus, Search, Settings2, ShoppingCart,
-  Sparkles, TrendingUp, Truck, Wallet, X,
+  Menu, Mic, MessageCircle, PackagePlus, Pencil, Plus, Search, Send, Settings2, ShoppingCart,
+  Sparkles, TrendingUp, Truck, Volume2, Wallet, X,
 } from "lucide-react";
 
 type Batch = { id:string; batchNo:string; quantity:number; expiryDate:string; receivedAt:string };
@@ -52,6 +52,7 @@ const initialProducts: Omit<Product, 'batches'>[] = [
 
 const navItems = [
   { label: "Overview", icon: LayoutDashboard },
+  { label: "Shop assistant", icon: MessageCircle },
   { label: "Inventory", icon: Boxes },
   { label: "Sales & profit", icon: TrendingUp },
   { label: "Expiry alerts", icon: CalendarClock },
@@ -117,6 +118,10 @@ export default function Home() {
   const [form, setForm] = useState(emptyForm);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [notice, setNotice] = useState("");
+  const [assistantInput,setAssistantInput]=useState("");
+  const [assistantLanguage,setAssistantLanguage]=useState<"hi-IN"|"en-IN">("hi-IN");
+  const [assistantMessages,setAssistantMessages]=useState<{role:"assistant"|"user";text:string}[]>([{role:"assistant",text:"Namaste! Main aapke saved stock, sales, profit aur suppliers ke data se jawab de sakti hoon. Example: “Maggi ka stock kitna hai?” ya “Aaj ka profit batao.”"}]);
+  const [isListening,setIsListening]=useState(false);
 
   useEffect(() => {
     try {
@@ -244,8 +249,51 @@ export default function Home() {
 
   const reorderSuggestions=products.filter(product=>product.quantity<=product.lowStockAt).map(product=>({...product,suggestedQty:Math.max(0,(product.reorderToLevel??Math.max(product.lowStockAt*2,product.lowStockAt+1))-product.quantity)})).filter(product=>product.suggestedQty>0);
 
+  function answerShopQuestion(raw:string):string {
+    const q=raw.trim().toLowerCase();
+    if(!q)return "Please apna question type ya bolkar batayein.";
+    const low=products.filter(p=>p.quantity<=p.lowStockAt);
+    const matched=products.find(p=>q.includes(p.name.toLowerCase())||p.name.toLowerCase().split(/\s+/).some(w=>w.length>2&&q.includes(w)));
+    if(/\b(low stock|kam stock|stock kam|reorder|order karna|khatam|shortage)\b/.test(q)){
+      if(!low.length)return "Abhi kisi product ka stock low-stock threshold par ya neeche nahi hai.";
+      return "Low-stock items: "+low.map(p=>{const target=p.reorderToLevel??Math.max(p.lowStockAt*2,p.lowStockAt+1);const supplier=suppliers.find(x=>x.id===p.supplierId);return p.name+": "+p.quantity+" "+p.unit+" available, "+Math.max(0,target-p.quantity)+" "+p.unit+" reorder karein"+(supplier?" ("+supplier.name+")":"");}).join("; ")+".";
+    }
+    if(/\b(sales|sale|revenue|bikri|aamdani)\b/.test(q)){
+      const day=sales.filter(x=>x.soldAt===today());const revenue=day.reduce((n,x)=>n+x.revenue,0);
+      if(/\b(today|aaj)\b/.test(q))return "Aaj "+day.length+" sales record hui. Revenue "+formatMoney(revenue)+".";
+      return "Saved sales ka total revenue "+formatMoney(totalRevenue)+", product cost "+formatMoney(totalCost)+" hai.";
+    }
+    if(/\b(profit|munafa|faayda|fayda)\b/.test(q)){
+      const day=sales.filter(x=>x.soldAt===today());const profit=day.reduce((n,x)=>n+x.profit,0);
+      if(/\b(today|aaj)\b/.test(q))return "Aaj ka recorded gross profit "+formatMoney(profit)+" hai. Ye overheads, tax aur fees se pehle ka profit hai.";
+      return "Recorded gross profit "+formatMoney(totalProfit)+" hai. Ismein rent, wages, tax aur fees include nahi hain.";
+    }
+    if(/\b(supplier|suppliers|vendor|distributor)\b/.test(q)){
+      if(matched){const supplier=suppliers.find(x=>x.id===matched.supplierId);return supplier?matched.name+" ka preferred supplier "+supplier.name+" hai. Contact: "+(supplier.contact||"saved nahi hai")+".":matched.name+" ke saath abhi koi supplier linked nahi hai.";}
+      return suppliers.length?"Saved suppliers: "+suppliers.map(x=>x.name+(x.contact?" ("+x.contact+")":"")).join(", ")+".":"Abhi koi supplier saved nahi hai.";
+    }
+    if(matched)return matched.name+": available stock "+matched.quantity+" "+matched.unit+", purchase price "+formatMoney(matched.costPrice)+", selling price "+formatMoney(matched.sellingPrice)+", status "+getStatus(matched)+".";
+    if(/\b(stock|inventory|maal|samaan|item|product)\b/.test(q))return "Inventory mein "+products.length+" products hain. Total stock cost "+formatMoney(inventoryValue)+". Low-stock items "+low.length+". Kisi product ka naam poochhein for exact quantity.";
+    return "Main saved inventory, product stock, low-stock/reorder, suppliers, sales aur gross profit ke questions answer kar sakti hoon. Example: “How much Maggi stock?”, “Aaj ki sales”, “Low stock items” ya “Total profit”.";
+  }
+
+  function submitAssistantQuestion(event?:FormEvent<HTMLFormElement>){
+    event?.preventDefault();const question=assistantInput.trim();if(!question)return;
+    const answer=answerShopQuestion(question);
+    setAssistantMessages(current=>[...current,{role:"user",text:question},{role:"assistant",text:answer}].slice(-30));setAssistantInput("");
+  }
+
   function handleVoice() {
-    setNotice("Hindi voice entry abhi connected nahi hai. Product form se stock add karein.");
+    type SpeechResultEvent={results:ArrayLike<ArrayLike<{transcript:string}>>};
+    type SpeechRecognitionLike={lang:string;interimResults:boolean;maxAlternatives:number;onresult:((event:SpeechResultEvent)=>void)|null;onerror:(()=>void)|null;onend:(()=>void)|null;start:()=>void;stop:()=>void};
+    type SpeechWindow=Window&{SpeechRecognition?:new()=>SpeechRecognitionLike;webkitSpeechRecognition?:new()=>SpeechRecognitionLike};
+    const speechWindow=window as SpeechWindow;const Recognition=speechWindow.SpeechRecognition||speechWindow.webkitSpeechRecognition;
+    if(!Recognition){setNotice("Is browser mein voice recognition supported nahi. Text assistant use karein.");return;}
+    if(isListening){setIsListening(false);return;}
+    const recognition=new Recognition();recognition.lang=assistantLanguage;recognition.interimResults=false;recognition.maxAlternatives=1;
+    recognition.onresult=(event)=>{const transcript=event.results[0]?.[0]?.transcript||"";if(transcript){setAssistantInput(transcript);const answer=answerShopQuestion(transcript);setAssistantMessages(current=>[...current,{role:"user",text:transcript},{role:"assistant",text:answer}].slice(-30));if("speechSynthesis" in window){const utterance=new SpeechSynthesisUtterance(answer);utterance.lang=assistantLanguage;window.speechSynthesis.speak(utterance);}}};
+    recognition.onerror=()=>{setIsListening(false);setNotice("Voice capture nahi ho paya. Text se question pooch sakte hain.");};
+    recognition.onend=()=>setIsListening(false);setIsListening(true);recognition.start();
   }
 
   return (
@@ -313,6 +361,16 @@ export default function Home() {
                 <button onClick={openAdd} className="inline-flex items-center gap-2 rounded-xl bg-forest px-4 py-3 text-sm font-bold text-white shadow-lg shadow-forest/15 transition hover:bg-[#225238]"><PackagePlus size={17} /> Add stock</button>
               </div>
             </div>
+
+            {activeNav==="Shop assistant" ? <div className="mt-7 grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
+              <div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Hindi + English shop assistant</h2><p className="mt-1 text-xs text-slate-400">Answers use this device's saved inventory and sales.</p></div><select value={assistantLanguage} onChange={e=>setAssistantLanguage(e.target.value as "hi-IN"|"en-IN")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"><option value="hi-IN">Hindi voice</option><option value="en-IN">English voice</option></select></div>
+                <div className="mt-5 max-h-[440px] min-h-[260px] space-y-3 overflow-y-auto rounded-xl bg-[#f8fbf8] p-3">{assistantMessages.map((message,index)=><div key={index} className={message.role==="user"?"ml-auto max-w-[88%] rounded-2xl rounded-br-sm bg-forest px-4 py-3 text-xs leading-5 text-white":"mr-auto max-w-[92%] rounded-2xl rounded-bl-sm border border-slate-100 bg-white px-4 py-3 text-xs leading-5 text-slate-700"}>{message.text}</div>)}</div>
+                <form onSubmit={submitAssistantQuestion} className="mt-4 flex gap-2"><input value={assistantInput} onChange={e=>setAssistantInput(e.target.value)} placeholder="Maggi stock kitna hai? / Today's profit?" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-forest"/><button type="submit" aria-label="Send question" className="rounded-xl bg-forest px-4 text-white"><Send size={17}/></button><button type="button" onClick={handleVoice} aria-label="Start voice input" className={isListening?"rounded-xl bg-amber-100 px-4 text-amber-800":"rounded-xl border border-slate-200 px-4 text-forest"}><Mic size={17}/></button></form>
+                <p className="mt-3 text-[10px] text-slate-400">{isListening?"Listening… Speak now.":"Voice needs browser support and microphone permission. Text mode always available."}</p>
+              </div>
+              <div className="space-y-4"><div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft"><h3 className="text-sm font-extrabold text-ink">Try asking</h3><div className="mt-3 space-y-2 text-xs text-slate-600"><p>• Maggi ka stock kitna hai?</p><p>• Which items are low stock?</p><p>• Aaj ki sales kitni hui?</p><p>• Total gross profit batao</p><p>• Amul milk ka supplier kaun hai?</p></div></div><div className="rounded-2xl bg-ink p-5 text-white"><div className="flex items-center gap-2"><Sparkles size={17}/><h3 className="text-sm font-extrabold">Data-grounded, not guesswork</h3></div><p className="mt-3 text-xs leading-5 text-white/70">Assistant saved products, quantities, supplier links aur recorded sales ko read karke calculations se jawab deta hai.</p><p className="mt-3 text-[10px] text-white/50">No external AI API, no extra cost, no cloud upload. Speech support browser par depend karta hai.</p></div></div>
+            </div> : null}
 
             {activeNav==="Suppliers & reorder" ? <div className="mt-7 space-y-6">
               <div className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
