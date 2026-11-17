@@ -259,7 +259,7 @@ export default function Home() {
     const candidates=products.map(product=>({product,matched:product.name.toLowerCase().split(/[^a-z0-9]+/).filter(word=>word.length>2&&q.includes(word)).sort((a,b)=>b.length-a.length)[0]||""})).filter(item=>item.matched).sort((a,b)=>b.matched.length-a.matched.length);
     if(!candidates.length||(candidates.length>1&&candidates[0].matched.length===candidates[1].matched.length))return null;
     const product=candidates[0].product;
-    const withoutName=q.replace(product.name.toLowerCase()," ").replace(new RegExp("\b"+candidates[0].matched+"\b","g")," ");
+    const withoutName=q.replace(product.name.toLowerCase()," ").replaceAll(candidates[0].matched," ");
     const quantityMatch=withoutName.match(/\b(\d+(?:\.\d+)?)\b/);
     if(!quantityMatch)return null;
     const quantity=Number(quantityMatch[1]);if(!Number.isFinite(quantity)||quantity<=0)return null;
