@@ -51,6 +51,16 @@ Inventory, movement history, sales, expenses and supplier records are stored in 
 - This is not a secure multi-user database and must not be treated as a cloud backup.
 - Initial sample products are demonstration data. Users can edit them or add their own products.
 
+## Local business backup and restore
+
+- A downloadable versioned JSON backup includes products and batch details, stock movements, sales, suppliers, expenses, monthly expense budget and the latest 500 reconciliation audit events.
+- Backup export is generated in the browser from the hydrated local state; it does not upload shop data to a server.
+- Restore accepts only the StockSaathi backup envelope and validates required collections and record fields before showing a preview.
+- Selecting a file does not modify business data. The user must explicitly confirm replacement; cancellation leaves the current data unchanged.
+- A confirmed restore writes the complete validated dataset to the existing `stocksaathi.inventory.v4` localStorage key and updates the active UI state.
+- Restore replaces data in the current browser profile. It is not a merge, cloud sync, or automatic scheduled backup. Users should download and safely store a backup before restoring another one.
+- Backup files contain sensitive shop and financial records; users are responsible for protecting the downloaded file.
+
 ## Current limitations
 
 - Reports are local to the browser profile and are not consolidated across devices or multiple shop users.
