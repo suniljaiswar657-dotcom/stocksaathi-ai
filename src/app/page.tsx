@@ -52,6 +52,11 @@ async function validateStockSaathiBackup(value:unknown):Promise<{ok:true;backup:
   if(!d.suppliers.every(v=>strings(v,["id","name","contact","notes","createdAt"])&&!!(v as Record<string,string>).name.trim()&&Number.isFinite(Date.parse((v as Record<string,string>).createdAt))))return {ok:false,reason:"Supplier record invalid hai."};
   if(!d.expenses.every(v=>strings(v,["id","description","category","spentAt","createdAt"])&&numbers(v,["amount"])&&(v as Record<string,number>).amount>0&&Number.isFinite(Date.parse((v as Record<string,string>).spentAt))&&Number.isFinite(Date.parse((v as Record<string,string>).createdAt))))return {ok:false,reason:"Expense record invalid hai."};
   if(!d.reconciliationAudit.every(v=>strings(v,["id","actor","action","issueType","recordId","summary","at"])&&Number.isFinite(Date.parse((v as Record<string,string>).at))))return {ok:false,reason:"Audit event invalid hai."};
+  const productIds=new Set(d.products.map(product=>(product as Record<string,unknown>).id as string));
+  const supplierIds=new Set(d.suppliers.map(supplier=>(supplier as Record<string,unknown>).id as string));
+  if(!d.sales.every(sale=>productIds.has((sale as Record<string,unknown>).productId as string)))return {ok:false,reason:"Sale ka linked product backup mein nahi mila."};
+  if(!d.movements.every(movement=>productIds.has((movement as Record<string,unknown>).productId as string)))return {ok:false,reason:"Stock movement ka linked product backup mein nahi mila."};
+  if(!d.products.every(product=>{const supplierId=(product as Record<string,unknown>).supplierId;return supplierId===undefined||supplierId===""||(typeof supplierId==="string"&&supplierIds.has(supplierId));}))return {ok:false,reason:"Product ka linked supplier backup mein nahi mila."};
   if(hasIntegrity){try{const expected=await backupDigest(d as StockSaathiBackupData);if(expected!==(value.integrity as {digest:string}).digest)return {ok:false,reason:"SHA-256 integrity check failed. File damaged ya modified ho sakti hai."};}
   catch{return {ok:false,reason:"Is browser mein SHA-256 verification available nahi hai."};}}
   return {ok:true,backup:value as unknown as StockSaathiBackup};
