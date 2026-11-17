@@ -8,6 +8,8 @@ import {
   Sparkles, TrendingUp, Wallet, X,
 } from "lucide-react";
 
+type Batch = { id:string; batchNo:string; quantity:number; expiryDate:string; receivedAt:string };
+type StockMovement = { id:string; productId:string; productName:string; type:'IN'|'OUT'|'ADJUSTMENT'; quantity:number; note:string; at:string };
 type Product = {
   id: string;
   name: string;
@@ -18,11 +20,16 @@ type Product = {
   sellingPrice: number;
   lowStockAt: number;
   expiryDate: string;
+  batches: Batch[];
 };
 
 type ProductStatus = "Healthy" | "Low stock" | "Expiring" | "Expired";
 
-const STORAGE_KEY = "stocksaathi.inventory.v1";
+const STORAGE_KEY = "stocksaathi.inventory.v2";
+const LEGACY_STORAGE_KEY = "stocksaathi.inventory.v1";
+const makeId = () => typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2,7);
+const sumBatches = (b:Batch[]) => b.reduce((n,x)=>n+Math.max(0,x.quantity),0);
+function normalizeProduct(p:Product):Product { const batches=Array.isArray(p.batches)&&p.batches.length?p.batches:[{id:makeId(),batchNo:"OPENING",quantity:Math.max(0,Number(p.quantity)||0),expiryDate:p.expiryDate||"",receivedAt:new Date().toISOString()}]; return {...p,batches,quantity:sumBatches(batches),expiryDate:batches.filter(x=>x.quantity>0&&x.expiryDate).sort((a,b)=>a.expiryDate.localeCompare(b.expiryDate))[0]?.expiryDate||""}; }
 const today = () => new Date().toISOString().slice(0, 10);
 const dateInDays = (days: number) => {
   const date = new Date();
@@ -50,8 +57,9 @@ const emptyForm = {
 };
 
 function getStatus(product: Product): ProductStatus {
-  if (product.expiryDate && product.expiryDate < today()) return "Expired";
-  if (product.expiryDate && product.expiryDate <= dateInDays(7)) return "Expiring";
+  const dates=product.batches.filter(b=>b.quantity>0&&b.expiryDate).map(b=>b.expiryDate).sort();
+  if (dates.some(d=>d<today())) return "Expired";
+  if (dates.some(d=>d<=dateInDays(7))) return "Expiring";
   if (product.quantity <= product.lowStockAt) return "Low stock";
   return "Healthy";
 }
@@ -82,7 +90,10 @@ function MetricCard({
 }
 
 export default function Home() {
-  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [products, setProducts] = useState<Product[]>(initialProducts.map(normalizeProduct));
+  const [movements,setMovements]=useState<StockMovement[]>([]);
+  const [batchProductId,setBatchProductId]=useState<string|null>(null);
+  const [batchForm,setBatchForm]=useState({batchNo:'',quantity:'1',expiryDate:''});
   const [hydrated, setHydrated] = useState(false);
   const [activeNav, setActiveNav] = useState("Overview");
   const [search, setSearch] = useState("");
@@ -94,11 +105,8 @@ export default function Home() {
 
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed: unknown = JSON.parse(saved);
-        if (Array.isArray(parsed)) setProducts(parsed as Product[]);
-      }
+      const saved=window.localStorage.getItem(STORAGE_KEY); const legacy=window.localStorage.getItem(LEGACY_STORAGE_KEY); const source=saved||legacy;
+      if(source){ const parsed:unknown=JSON.parse(source); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)&&"products" in parsed){const data=parsed as {products:Product[];movements?:StockMovement[]};if(Array.isArray(data.products))setProducts(data.products.map(normalizeProduct));if(Array.isArray(data.movements))setMovements(data.movements);}else if(Array.isArray(parsed)){setProducts((parsed as Product[]).map(normalizeProduct));setNotice("Purana inventory safely migrate ho gaya. Existing products preserve hain.");}}
     } catch {
       setNotice("Saved inventory could not be read. Demo data is shown.");
     } finally {
@@ -109,11 +117,11 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({version:2,products,movements}));
     } catch {
       setNotice("Device storage is full. Changes may not persist.");
     }
-  }, [products, hydrated]);
+  }, [products, movements, hydrated]);
 
   useEffect(() => {
     if (!notice) return;
@@ -168,35 +176,30 @@ export default function Home() {
       setNotice("Quantity aur prices valid positive numbers hone chahiye.");
       return;
     }
+    const productId=editingId??makeId(); const existing=products.find(item=>item.id===editingId); let batches=existing?[...existing.batches]:[{id:makeId(),batchNo:"OPENING",quantity,expiryDate:form.expiryDate,receivedAt:new Date().toISOString()}];
+    if(existing){let delta=quantity-existing.quantity;if(delta>0)batches.push({id:makeId(),batchNo:"MANUAL-ADJ",quantity:delta,expiryDate:form.expiryDate,receivedAt:new Date().toISOString()});if(delta<0){let left=-delta;batches=batches.sort((a,b)=>a.receivedAt.localeCompare(b.receivedAt)).map(batch=>{const take=Math.min(batch.quantity,left);left-=take;return {...batch,quantity:batch.quantity-take};});}}
     const product: Product = {
-      id: editingId ?? (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now())),
+      id: productId,
       name,
       category: form.category.trim(),
-      quantity,
+      quantity: sumBatches(batches),
       unit: form.unit.trim(),
       costPrice,
       sellingPrice,
       lowStockAt,
       expiryDate: form.expiryDate,
+      batches,
     };
-    setProducts((current) => editingId
-      ? current.map((item) => item.id === editingId ? product : item)
-      : [product, ...current]);
+    setProducts((current) => editingId ? current.map((item) => item.id === editingId ? product : item) : [product,...current]);
+    if(!existing)setMovements(current=>[{id:makeId(),productId,productName:name,type:"IN",quantity,note:"Opening stock",at:new Date().toISOString()},...current].slice(0,200));
+    else if(quantity!==existing.quantity)setMovements(current=>[{id:makeId(),productId,productName:name,type:"ADJUSTMENT",quantity:Math.abs(quantity-existing.quantity),note:"Quantity changed while editing product",at:new Date().toISOString()},...current].slice(0,200));
     setShowForm(false);
     setNotice(editingId ? name + " updated." : name + " inventory mein add ho gaya.");
   }
 
-  function adjustStock(product: Product, amount: number) {
-    const nextQuantity = product.quantity + amount;
-    if (nextQuantity < 0) {
-      setNotice("Stock zero se kam nahi ho sakta.");
-      return;
-    }
-    setProducts((current) => current.map((item) =>
-      item.id === product.id ? { ...item, quantity: nextQuantity } : item,
-    ));
-    setNotice(product.name + " stock updated: " + nextQuantity + " " + product.unit);
-  }
+  function adjustStock(product:Product,amount:number){const next=product.quantity+amount;if(next<0){setNotice("Stock zero se kam nahi ho sakta.");return;}let batches=[...product.batches];if(amount>0)batches.push({id:makeId(),batchNo:"MANUAL-IN",quantity:amount,expiryDate:"",receivedAt:new Date().toISOString()});else{let left=-amount;batches=batches.sort((a,b)=>a.receivedAt.localeCompare(b.receivedAt)).map(batch=>{const take=Math.min(batch.quantity,left);left-=take;return {...batch,quantity:batch.quantity-take};});}const updated=normalizeProduct({...product,batches,quantity:sumBatches(batches)});setProducts(current=>current.map(item=>item.id===product.id?updated:item));setMovements(current=>[{id:makeId(),productId:product.id,productName:product.name,type:amount>0?"IN":"OUT",quantity:Math.abs(amount),note:amount>0?"Manual stock received":"Manual stock reduction (FIFO)",at:new Date().toISOString()},...current].slice(0,200));setNotice(product.name+" stock updated: "+updated.quantity+" "+product.unit);}
+
+  function addBatch(event:FormEvent<HTMLFormElement>){event.preventDefault();const product=products.find(item=>item.id===batchProductId);const quantity=Number(batchForm.quantity);if(!product||!batchForm.batchNo.trim()||!Number.isFinite(quantity)||quantity<=0){setNotice("Batch number aur valid quantity required hain.");return;}const batch:Batch={id:makeId(),batchNo:batchForm.batchNo.trim(),quantity,expiryDate:batchForm.expiryDate,receivedAt:new Date().toISOString()};const updated=normalizeProduct({...product,batches:[...product.batches,batch],quantity:product.quantity+quantity});setProducts(current=>current.map(item=>item.id===product.id?updated:item));setMovements(current=>[{id:makeId(),productId:product.id,productName:product.name,type:"IN",quantity,note:"New batch: "+batch.batchNo,at:new Date().toISOString()},...current].slice(0,200));setBatchProductId(null);setBatchForm({batchNo:"",quantity:"1",expiryDate:""});setNotice("New batch added for "+product.name);}
 
   function handleVoice() {
     setNotice("Hindi voice entry abhi connected nahi hai. Product form se stock add karein.");
@@ -321,7 +324,7 @@ export default function Home() {
                         <td className="px-4 py-4 text-slate-600">{formatMoney(product.costPrice)} / {formatMoney(product.sellingPrice)}</td>
                         <td className="px-4 py-4 text-slate-500">{product.expiryDate || "—"}</td>
                         <td className="px-4 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${status === "Healthy" ? "bg-emerald-50 text-emerald-700" : status === "Low stock" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}><span className="h-1.5 w-1.5 rounded-full bg-current" />{status}</span></td>
-                        <td className="px-6 py-3"><div className="flex items-center gap-1"><button onClick={() => adjustStock(product, -1)} disabled={product.quantity <= 0} className="h-8 w-8 rounded-lg border border-slate-200 font-bold text-slate-600 disabled:opacity-30" aria-label={`Decrease ${product.name} stock`}>−</button><button onClick={() => adjustStock(product, 1)} className="h-8 w-8 rounded-lg border border-slate-200 font-bold text-slate-600" aria-label={`Increase ${product.name} stock`}>+</button><button onClick={() => openEdit(product)} className="ml-1 inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2 text-slate-600 hover:bg-slate-50"><Pencil size={12} /> Edit</button></div></td>
+                        <td className="px-6 py-3"><div className="flex items-center gap-1"><button onClick={() => {setBatchProductId(product.id);setBatchForm({batchNo:"",quantity:"1",expiryDate:""});}} className="h-8 rounded-lg border border-[#dce9de] px-2 text-[10px] font-bold text-forest">+ Batch</button><button onClick={() => adjustStock(product, -1)} disabled={product.quantity <= 0} className="h-8 w-8 rounded-lg border border-slate-200 font-bold text-slate-600 disabled:opacity-30" aria-label={`Decrease ${product.name} stock`}>−</button><button onClick={() => adjustStock(product, 1)} className="h-8 w-8 rounded-lg border border-slate-200 font-bold text-slate-600" aria-label={`Increase ${product.name} stock`}>+</button><button onClick={() => openEdit(product)} className="ml-1 inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2 text-slate-600 hover:bg-slate-50"><Pencil size={12} /> Edit</button></div></td>
                       </tr>;
                     })}
                     {filteredProducts.length === 0 ? <tr><td colSpan={7} className="px-6 py-8 text-center text-xs text-slate-400">{products.length ? "No products match your search." : "Inventory empty. Add your first product."}</td></tr> : null}
@@ -331,6 +334,10 @@ export default function Home() {
               <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4"><span className="text-[11px] text-slate-400">Showing {filteredProducts.length} of {products.length} products</span><span className="text-[10px] font-semibold text-emerald-700">{hydrated ? "Saved on this device" : "Loading..."}</span></div>
             </div>
 
+            <div className="mt-6 grid gap-5 xl:grid-cols-2">
+              <div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft"><h2 className="text-base font-extrabold text-ink">Batch-wise expiry</h2><p className="mt-1 text-xs text-slate-400">Active lot-wise quantity and expiry</p><div className="mt-4 max-h-64 space-y-3 overflow-y-auto">{products.flatMap(product=>product.batches.filter(batch=>batch.quantity>0).map(batch=>({product,batch}))).sort((a,b)=>(a.batch.expiryDate||"9999").localeCompare(b.batch.expiryDate||"9999")).map(({product,batch})=><div key={batch.id} className="flex items-center justify-between gap-3 rounded-xl bg-[#f8fbf8] p-3"><div><p className="text-xs font-bold text-ink">{product.name}</p><p className="mt-1 text-[10px] text-slate-500">Batch {batch.batchNo} · {batch.quantity} {product.unit}</p></div><span className="text-[10px] font-bold text-slate-500">{batch.expiryDate||"No expiry"}</span></div>)}</div></div>
+              <div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft"><h2 className="text-base font-extrabold text-ink">Stock movement history</h2><p className="mt-1 text-xs text-slate-400">Latest 200 changes stored on this device</p><div className="mt-4 max-h-64 space-y-3 overflow-y-auto">{movements.slice(0,30).map(m=><div key={m.id} className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3"><div className="min-w-0"><p className="truncate text-xs font-bold text-ink">{m.productName}</p><p className="mt-1 text-[10px] text-slate-500">{m.note} · {new Date(m.at).toLocaleString("en-IN")}</p></div><span className="text-[10px] font-bold text-forest">{m.type} {m.quantity}</span></div>)}{movements.length===0?<p className="text-xs text-slate-400">No movements yet.</p>:null}</div></div>
+            </div>
             <div className="mt-6 flex flex-col items-start justify-between gap-3 rounded-2xl border border-dashed border-[#cbdccc] bg-[#f8fbf8] p-4 sm:flex-row sm:items-center sm:px-5">
               <div className="flex items-center gap-3"><div className="rounded-xl bg-white p-2.5 text-forest shadow-sm"><Command size={18} /></div><div><p className="text-xs font-bold text-ink">Made for Indian small businesses</p><p className="mt-1 text-[11px] text-slate-500">Hindi-first workflows • Simple inventory • Clear stock visibility</p></div></div>
               <span className="text-[10px] font-semibold text-slate-400">STOCKSAATHI AI · INVENTORY PREVIEW</span>
@@ -339,6 +346,7 @@ export default function Home() {
         </section>
       </div>
 
+      {batchProductId ? <div className="fixed inset-0 z-[55] flex items-center justify-center bg-ink/40 p-4"><form onSubmit={addBatch} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"><h3 className="text-lg font-extrabold text-ink">Receive new batch</h3><p className="mt-1 text-xs text-slate-500">{products.find(item=>item.id===batchProductId)?.name}</p><div className="mt-5 space-y-3"><input required maxLength={40} placeholder="Batch / lot number" value={batchForm.batchNo} onChange={e=>setBatchForm({...batchForm,batchNo:e.target.value})} className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/><input required type="number" min="0.01" step="any" placeholder="Quantity" value={batchForm.quantity} onChange={e=>setBatchForm({...batchForm,quantity:e.target.value})} className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/><input type="date" value={batchForm.expiryDate} onChange={e=>setBatchForm({...batchForm,expiryDate:e.target.value})} className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={()=>setBatchProductId(null)} className="rounded-xl px-4 py-2 text-xs font-bold">Cancel</button><button type="submit" className="rounded-xl bg-forest px-4 py-2 text-xs font-bold text-white">Save batch</button></div></form></div> : null}
       {showForm ? <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink/40 p-4">
         <div className="my-6 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
           <div className="flex items-center justify-between"><div><h3 className="text-lg font-extrabold text-ink">{editingId ? "Edit product" : "Add a product"}</h3><p className="mt-1 text-xs text-slate-500">Product details inventory mein save honge.</p></div><button onClick={() => setShowForm(false)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100" aria-label="Close"><X size={18} /></button></div>
