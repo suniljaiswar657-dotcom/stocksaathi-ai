@@ -419,7 +419,10 @@ export default function Home() {
       if(/\b(today|aaj)\b/.test(q))return "Aaj "+day.length+" expenses record hue. Total expense "+formatMoney(dayTotal)+". Net profit "+formatMoney(sales.filter(x=>x.soldAt===today()).reduce((n,x)=>n+x.profit,0)-dayTotal)+".";
       return "Saved expenses "+formatMoney(totalExpenses)+". Gross profit "+formatMoney(totalProfit)+". Net profit "+formatMoney(netProfit)+".";
     }
-    if(/\b(net profit|net munafa|net fayda)\b/.test(q))return "Net profit = gross profit − recorded expenses. Current net profit "+formatMoney(netProfit)+". Unrecorded costs, tax and fees excluded.";
+    if(/\b(net profit|net munafa|net fayda)\b/.test(q)){
+      if(/\b(today|aaj)\b/.test(q)){const dayGross=sales.filter(x=>x.soldAt===today()).reduce((n,x)=>n+x.profit,0);const dayExpenses=expenses.filter(x=>x.spentAt===today()).reduce((n,x)=>n+x.amount,0);return "Aaj ka net profit "+formatMoney(dayGross-dayExpenses)+" (gross profit "+formatMoney(dayGross)+" − expenses "+formatMoney(dayExpenses)+").";}
+      return "Net profit = gross profit − recorded expenses. Current net profit "+formatMoney(netProfit)+". Unrecorded costs, tax and fees excluded.";
+    }
     if(/\b(profit|munafa|faayda|fayda)\b/.test(q)){
       const day=sales.filter(x=>x.soldAt===today());const profit=day.reduce((n,x)=>n+x.profit,0);const dayExpenses=expenses.filter(x=>x.spentAt===today()).reduce((n,x)=>n+x.amount,0);
       if(/\b(today|aaj)\b/.test(q))return "Aaj gross profit "+formatMoney(profit)+", recorded expenses "+formatMoney(dayExpenses)+" aur net profit "+formatMoney(profit-dayExpenses)+" hai.";
