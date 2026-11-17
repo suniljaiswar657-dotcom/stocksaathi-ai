@@ -218,15 +218,18 @@ export default function Home() {
   const [reviewedReconciliationIds,setReviewedReconciliationIds]=useState<string[]>([]);
   const [pendingReconciliationAction,setPendingReconciliationAction]=useState<{kind:"remove-sale"|"remove-expense"|"recalculate-sale";id:string;label:string}|null>(null);
   const reconciliationDetails=useMemo(()=>{
-    const details:{id:string;group:string;kind:"sale"|"expense";title:string;description:string;action?:"remove-sale"|"remove-expense"}[]=[];
+    const details:{id:string;group:string;kind:"sale"|"expense";title:string;description:string}[]=[];
     const addDuplicateGroups=(items:{id:string;productId?:string;productName?:string;quantity?:number;unit?:string;unitPrice?:number;revenue?:number;soldAt?:string;description?:string;category?:string;amount?:number;spentAt?:string}[],group:string,kind:"sale"|"expense")=>{
       const groups=new Map<string,typeof items>();
       for(const item of items){
         const key=kind==="sale"?JSON.stringify([item.productId,item.soldAt,item.quantity,item.unitPrice,item.revenue]):JSON.stringify([item.spentAt,String(item.description||"").trim().toLowerCase(),String(item.category||"").trim().toLowerCase(),item.amount]);
         groups.set(key,[...(groups.get(key)||[]),item]);
       }
-      for(const [key,records] of groups){if(records.length<2)continue;records.slice(1).forEach((record,index)=>details.push({id:record.id+"-"+group+"-"+index,group,kind,title:kind==="sale"?(record.productName||"Sale"):(record.description||"Expense"),description:kind==="sale"?`Date ${record.soldAt} · ${record.quantity} ${record.unit} · ${formatMoney(record.unitPrice||0)} each · Total ${formatMoney(record.revenue||0)}`:`Date ${record.spentAt} · ${record.category} · ${formatMoney(record.amount||0)}`,action:kind==="sale"?"remove-sale":"remove-expense"}));}
+      for(const records of groups.values()){if(records.length<2)continue;records.slice(1).forEach((record,index)=>details.push({id:record.id+"-"+group+"-"+index,group,kind,title:kind==="sale"?(record.productName||"Sale"):(record.description||"Expense"),description:kind==="sale"?`Date ${record.soldAt} · ${record.quantity} ${record.unit} · ${formatMoney(record.unitPrice||0)} each · Total ${formatMoney(record.revenue||0)}`:`Date ${record.spentAt} · ${record.category} · ${formatMoney(record.amount||0)}`}));}
     };
+    const addDuplicateIds=(items:{id:string;productName?:string;description?:string}[],kind:"sale"|"expense")=>{const seen=new Set<string>();items.forEach(item=>{if(seen.has(item.id))details.push({id:"duplicate-id-"+kind+"-"+item.id,group:"duplicateIds",kind,title:item.productName||item.description||"Repeated record ID",description:"Record ID "+item.id+" appears more than once. Manual review required; no automatic removal."});else seen.add(item.id);});};
+    addDuplicateIds(reportSales,"sale");
+    addDuplicateIds(reportExpenses,"expense");
     addDuplicateGroups(reportSales,"possibleDuplicates","sale");
     addDuplicateGroups(reportExpenses,"possibleDuplicates","expense");
     reportSales.forEach(sale=>{
@@ -237,6 +240,7 @@ export default function Home() {
       if(sale.productId&&!products.some(product=>product.id===sale.productId))details.push({id:sale.id+"-orphan",group:"orphanSales",kind:"sale",title:sale.productName||"Unlinked sale",description:`Sale ID ${sale.id} · Product ID ${sale.productId} is not in current inventory`});
     });
     reportExpenses.forEach(expense=>{if(!expense.id||!String(expense.description||"").trim()||!String(expense.category||"").trim()||!/^\\d{4}-\\d{2}-\\d{2}$/.test(expense.spentAt)||!Number.isFinite(expense.amount)||expense.amount<=0)details.push({id:expense.id+"-incomplete",group:"incompleteRecords",kind:"expense",title:expense.description||"Incomplete expense",description:`Expense ID ${expense.id||"(missing)"} · Date ${expense.spentAt||"(missing)"} · Review required fields`});});
+    if(reconciliationItems.find(item=>item.key==="dailyTotals")?.count)details.push({id:"pnl-total-mismatch",group:"dailyTotals",kind:"sale",title:"Selected-period totals do not reconcile",description:`Revenue ${formatMoney(reportRevenue)} · Product cost ${formatMoney(reportCost)} · Gross profit ${formatMoney(reportProfit)} · Expenses ${formatMoney(reportExpenseTotal)} · Net profit ${formatMoney(reportNetProfit)}. Compare grouped rows and underlying records.`});
     return details;
   },[reportSales,reportExpenses,products]);
   const [reviewCorrectionNotice,setReviewCorrectionNotice]=useState("");
@@ -252,9 +256,17 @@ export default function Home() {
     if(!pendingReconciliationAction)return;
     const action=pendingReconciliationAction;
     if(action.kind==="remove-sale"){
-      if(!sales.some(item=>item.id===action.id)){setNotice("Sale record ab nahi mila. Reconciliation refresh karein.");setPendingReconciliationAction(null);return;}
+      const duplicate=sales.find(item=>item.id===action.id);
+      if(!duplicate){setNotice("Sale record ab nahi mila. Reconciliation refresh karein.");setPendingReconciliationAction(null);return;}
+      const product=products.find(item=>item.id===duplicate.productId);
+      if(!product){setNotice("Linked product missing hai. Sale remove nahi ki; pehle inventory record resolve karein.");setPendingReconciliationAction(null);return;}
+      const receivedAt=new Date().toISOString();
+      const reversalBatch:Batch={id:makeId(),batchNo:"RECONCILIATION-REVERSAL",quantity:duplicate.quantity,expiryDate:"",receivedAt};
+      const updated=normalizeProduct({...product,batches:[...product.batches,reversalBatch]});
+      setProducts(current=>current.map(item=>item.id===product.id?updated:item));
+      setMovements(current=>[{id:makeId(),productId:product.id,productName:product.name,type:"IN",quantity:duplicate.quantity,note:"Confirmed duplicate sale reversal · "+duplicate.id,at:receivedAt},...current].slice(0,200));
       setSales(current=>current.filter(item=>item.id!==action.id));
-      setNotice("Confirmed duplicate sale record removed. Reports recalculate ho gaye.");
+      setNotice("Duplicate sale reversed: stock restored as a new reconciliation batch and sale removed.");
     }else if(action.kind==="remove-expense"){
       if(!expenses.some(item=>item.id===action.id)){setNotice("Expense record ab nahi mila. Reconciliation refresh karein.");setPendingReconciliationAction(null);return;}
       setExpenses(current=>current.filter(item=>item.id!==action.id));
