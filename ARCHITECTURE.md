@@ -25,6 +25,7 @@ A simple Hindi-first shop assistant for Indian small businesses. It helps shop o
 - Sales entry captures product, quantity, per-unit selling price and sale date; successful sales reduce stock using FIFO.
 - Sales history stores up to 1,000 transactions with revenue, cost-of-goods-sold and gross profit snapshots.
 - Sales summary reports total revenue, cost of goods sold and gross profit from recorded transactions.
+- Overview dashboard reads saved sales and provides selectable date-range totals plus daily or monthly revenue / gross-profit breakdowns.
 - Calculated stock value, low-stock status and expiry status.
 - Rule-based stock suggestions based on the saved inventory.
 
@@ -45,7 +46,7 @@ Inventory, movement history and sales are stored in browser `localStorage` under
 
 ## Current limitations
 
-- Sales, revenue and profit transactions are not implemented.
+- Reports are local to the browser profile and are not consolidated across devices or multiple shop users.
 - Hindi speech recognition and AI model calls are not connected.
 - No authentication, cloud database, supplier integration, barcode scanning or notifications.
 - No product deletion action is provided in this phase.
@@ -54,10 +55,11 @@ Inventory, movement history and sales are stored in browser `localStorage` under
 
 1. Dashboard and inventory.
 2. Stock movement history and batch-level expiry tracking. (implemented in the current UI)
-3. Sales entry and verified profit calculations.
-4. Supplier records and reorder workflow.
-5. Hindi voice/text assistant grounded in shop data.
-6. Authentication and cloud persistence, only after architecture approval.
+3. Sales entry and gross profit tracking. (implemented in the current UI)
+4. Date-wise daily and monthly sales analytics. (implemented in the current UI)
+5. Supplier records and reorder workflow.
+6. Hindi voice/text assistant grounded in shop data.
+7. Authentication and cloud persistence, only after architecture approval.
 
 ## Implementation principles
 
