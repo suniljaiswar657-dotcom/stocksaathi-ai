@@ -555,34 +555,50 @@ export default function Home() {
     setNotice("Profit & Loss CSV download start ho gaya.");
   }
 
-  function downloadBusinessBackup(){
-    const backup:StockSaathiBackup={app:"STOCKSAATHI_AI",backupVersion:1,exportedAt:new Date().toISOString(),data:{version:4,products,movements,sales,suppliers,expenses,monthlyExpenseBudget,reconciliationAudit}};
-    const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json;charset=utf-8;"});
-    const url=URL.createObjectURL(blob);
-    const link=document.createElement("a");link.href=url;link.download="stocksaathi-backup-"+today()+".json";document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
-    setNotice("Business backup download start ho gaya. File ko safe jagah par rakhein.");
+  async function downloadBusinessBackup(){
+    try{
+      const data:StockSaathiBackupData={version:4,products,movements,sales,suppliers,expenses,monthlyExpenseBudget,reconciliationAudit};
+      const integrity={algorithm:"SHA-256" as const,digest:await backupDigest(data)};
+      const backup:StockSaathiBackup={app:"STOCKSAATHI_AI",backupVersion:1,exportedAt:new Date().toISOString(),integrity,data};
+      const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json;charset=utf-8;"});
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement("a");link.href=url;link.download="stocksaathi-backup-"+today()+".json";document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+      setNotice("SHA-256 verified backup download start ho gaya. File ko safe jagah par rakhein.");
+    }catch{setNotice("Backup create nahi ho saka. Browser crypto support check karein.");}
   }
 
   async function prepareBusinessRestore(event:ChangeEvent<HTMLInputElement>){
     const file=event.target.files?.[0];event.target.value="";
     setPendingRestore(null);setRestoreFileName("");
     if(!file)return;
+    if(file.size>10*1024*1024){setNotice("Backup 10 MB limit se badi hai. Unsafe ya oversized file reject kar di.");return;}
     try{
       const parsed:unknown=JSON.parse(await file.text());
-      if(!isStockSaathiBackup(parsed)){setNotice("Ye valid STOCKSAATHI AI backup nahi hai ya file incomplete hai.");return;}
-      setPendingRestore(parsed);setRestoreFileName(file.name);
-    }catch{setNotice("Backup file read nahi hui. Valid JSON backup select karein.");}
+      const validation=await validateStockSaathiBackup(parsed);
+      if(!validation.ok){setNotice("Backup reject: "+validation.reason);return;}
+      setPendingRestore(validation.backup);setRestoreFileName(file.name);
+      setNotice("Backup structure, duplicate IDs aur SHA-256 integrity check pass hua. Restore preview ready hai.");
+    }catch{setNotice("Backup file read nahi hui. Corrupted JSON ya unsupported file reject kar di.");}
   }
 
   function confirmBusinessRestore(){
     if(!pendingRestore)return;
     const data=pendingRestore.data;
     const next={version:4,products:data.products,movements:data.movements,sales:data.sales,suppliers:data.suppliers,expenses:data.expenses,monthlyExpenseBudget:data.monthlyExpenseBudget,reconciliationAudit:data.reconciliationAudit.slice(0,500)};
-    try{window.localStorage.setItem(STORAGE_KEY,JSON.stringify(next));}
-    catch{setNotice("Restore save nahi ho saka. Device storage check karein.");return;}
+    const serialized=JSON.stringify(next);
+    let previous:string|null=null;
+    try{
+      previous=window.localStorage.getItem(STORAGE_KEY);
+      window.localStorage.setItem(STORAGE_KEY,serialized);
+      if(window.localStorage.getItem(STORAGE_KEY)!==serialized)throw new Error("Restore read-back verification failed");
+    }catch{
+      try{if(previous===null)window.localStorage.removeItem(STORAGE_KEY);else window.localStorage.setItem(STORAGE_KEY,previous);}catch{}
+      setNotice("Restore save ya read-back verification fail hua. Existing data ko rollback karne ki koshish ki gayi; UI data unchanged hai.");
+      return;
+    }
     setProducts(data.products.map(normalizeProduct));setMovements(data.movements);setSales(data.sales);setSuppliers(data.suppliers);setExpenses(data.expenses);setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));setReconciliationAudit(data.reconciliationAudit.slice(0,500));
     setPendingStockAction(null);setPendingSaleAction(null);setPendingExpenseAction(null);setPendingReconciliationAction(null);setEditingExpenseId(null);setPendingRestore(null);setRestoreFileName("");
-    setNotice("Backup successfully restore ho gaya. Current device data selected backup se replace hua.");
+    setNotice("Backup SHA-256 verified, restore saved and read-back verified successfully.");
   }
 
   function downloadReconciliationAuditCsv(){
