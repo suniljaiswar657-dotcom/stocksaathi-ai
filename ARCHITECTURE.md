@@ -23,6 +23,7 @@ A simple Hindi-first shop assistant for Indian small businesses. It helps shop o
 - Batch-wise expiry overview; product expiry status is derived from active batches.
 - Stock movement ledger for opening stock, manual receipts, reductions, quantity adjustments and sale deductions (latest 200 records).
 - Sales entry captures product, quantity, per-unit selling price and sale date; successful sales reduce stock using FIFO.
+- Natural-language sale requests can specify product, quantity and explicit per-unit price; a review panel previews revenue, product cost and gross profit. Only explicit confirmation creates the sale snapshot, deducts FIFO batches and writes a stock movement; cancellation makes no change.
 - Sales history stores up to 1,000 transactions with revenue, cost-of-goods-sold and gross profit snapshots.
 - Sales summary reports total revenue, cost of goods sold and gross profit from recorded transactions.
 - Overview dashboard reads saved sales and provides selectable date-range totals plus daily or monthly revenue / gross-profit breakdowns.
