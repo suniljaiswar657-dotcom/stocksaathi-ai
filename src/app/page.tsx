@@ -2,15 +2,16 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
-  Activity, ArrowDownRight, ArrowUpRight, Bell, Boxes, CalendarClock,
+  Activity, ArrowDownRight, ArrowUpRight, Bell, Boxes, Building2, CalendarClock,
   Check, ChevronDown, CircleHelp, Command, LayoutDashboard,
   Menu, Mic, PackagePlus, Pencil, Plus, Search, Settings2, ShoppingCart,
-  Sparkles, TrendingUp, Wallet, X,
+  Sparkles, TrendingUp, Truck, Wallet, X,
 } from "lucide-react";
 
 type Batch = { id:string; batchNo:string; quantity:number; expiryDate:string; receivedAt:string };
 type StockMovement = { id:string; productId:string; productName:string; type:'IN'|'OUT'|'ADJUSTMENT'; quantity:number; note:string; at:string };
 type Sale = { id:string; productId:string; productName:string; quantity:number; unit:string; unitPrice:number; unitCost:number; revenue:number; cost:number; profit:number; soldAt:string };
+type Supplier = { id:string; name:string; contact:string; notes:string; createdAt:string };
 type Product = {
   id: string;
   name: string;
@@ -22,12 +23,15 @@ type Product = {
   lowStockAt: number;
   expiryDate: string;
   batches: Batch[];
+  supplierId?: string;
+  reorderToLevel?: number;
 };
 
 type ProductStatus = "Healthy" | "Low stock" | "Expiring" | "Expired";
 
-const STORAGE_KEY = "stocksaathi.inventory.v3";
-const PREVIOUS_STORAGE_KEY = "stocksaathi.inventory.v2";
+const STORAGE_KEY = "stocksaathi.inventory.v4";
+const PREVIOUS_STORAGE_KEY = "stocksaathi.inventory.v3";
+const OLDER_STORAGE_KEY = "stocksaathi.inventory.v2";
 const LEGACY_STORAGE_KEY = "stocksaathi.inventory.v1";
 const makeId = () => typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2,7);
 const sumBatches = (b:Batch[]) => b.reduce((n,x)=>n+Math.max(0,x.quantity),0);
@@ -51,11 +55,13 @@ const navItems = [
   { label: "Inventory", icon: Boxes },
   { label: "Sales & profit", icon: TrendingUp },
   { label: "Expiry alerts", icon: CalendarClock },
+  { label: "Suppliers & reorder", icon: Truck },
 ];
 
 const emptyForm = {
   name: "", category: "Grocery", quantity: "1", unit: "units",
   costPrice: "0", sellingPrice: "0", lowStockAt: "5", expiryDate: "",
+  supplierId: "", reorderToLevel: "10",
 };
 
 function getStatus(product: Product): ProductStatus {
@@ -95,6 +101,8 @@ export default function Home() {
   const [products, setProducts] = useState<Product[]>(initialProducts.map(normalizeProduct));
   const [movements,setMovements]=useState<StockMovement[]>([]);
   const [sales,setSales]=useState<Sale[]>([]);
+  const [suppliers,setSuppliers]=useState<Supplier[]>([]);
+  const [supplierForm,setSupplierForm]=useState({name:"",contact:"",notes:""});
   const [reportFrom,setReportFrom]=useState(dateInDays(-29));
   const [reportTo,setReportTo]=useState(today());
   const [reportGrouping,setReportGrouping]=useState<"day"|"month">("day");
@@ -112,8 +120,8 @@ export default function Home() {
 
   useEffect(() => {
     try {
-      const saved=window.localStorage.getItem(STORAGE_KEY); const previous=window.localStorage.getItem(PREVIOUS_STORAGE_KEY); const legacy=window.localStorage.getItem(LEGACY_STORAGE_KEY); const source=saved||previous||legacy;
-      if(source){ const parsed:unknown=JSON.parse(source); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)&&"products" in parsed){const data=parsed as {products:Product[];movements?:StockMovement[];sales?:Sale[]};if(Array.isArray(data.products))setProducts(data.products.map(normalizeProduct));if(Array.isArray(data.movements))setMovements(data.movements);if(Array.isArray(data.sales))setSales(data.sales);}else if(Array.isArray(parsed)){setProducts((parsed as Product[]).map(normalizeProduct));setNotice("Purana inventory safely migrate ho gaya. Existing products preserve hain.");}}
+      const saved=window.localStorage.getItem(STORAGE_KEY); const previous=window.localStorage.getItem(PREVIOUS_STORAGE_KEY); const older=window.localStorage.getItem(OLDER_STORAGE_KEY); const legacy=window.localStorage.getItem(LEGACY_STORAGE_KEY); const source=saved||previous||older||legacy;
+      if(source){ const parsed:unknown=JSON.parse(source); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)&&"products" in parsed){const data=parsed as {products:Product[];movements?:StockMovement[];sales?:Sale[];suppliers?:Supplier[]};if(Array.isArray(data.products))setProducts(data.products.map(normalizeProduct));if(Array.isArray(data.movements))setMovements(data.movements);if(Array.isArray(data.sales))setSales(data.sales);if(Array.isArray(data.suppliers))setSuppliers(data.suppliers);}else if(Array.isArray(parsed)){setProducts((parsed as Product[]).map(normalizeProduct));setNotice("Purana inventory safely migrate ho gaya. Existing products preserve hain.");}}
     } catch {
       setNotice("Saved inventory could not be read. Demo data is shown.");
     } finally {
@@ -124,11 +132,11 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({version:3,products,movements,sales}));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({version:4,products,movements,sales,suppliers}));
     } catch {
       setNotice("Device storage is full. Changes may not persist.");
     }
-  }, [products, movements, sales, hydrated]);
+  }, [products, movements, sales, suppliers, hydrated]);
 
   useEffect(() => {
     if (!notice) return;
@@ -173,6 +181,8 @@ export default function Home() {
       sellingPrice: String(product.sellingPrice),
       lowStockAt: String(product.lowStockAt),
       expiryDate: product.expiryDate,
+      supplierId: product.supplierId || "",
+      reorderToLevel: String(product.reorderToLevel ?? Math.max(product.lowStockAt * 2, product.lowStockAt + 1)),
     });
     setShowForm(true);
   }
@@ -205,6 +215,8 @@ export default function Home() {
       lowStockAt,
       expiryDate: form.expiryDate,
       batches,
+      supplierId: form.supplierId || undefined,
+      reorderToLevel: Math.max(lowStockAt, Number(form.reorderToLevel) || lowStockAt),
     };
     setProducts((current) => editingId ? current.map((item) => item.id === editingId ? product : item) : [product,...current]);
     if(!existing)setMovements(current=>[{id:makeId(),productId,productName:name,type:"IN",quantity,note:"Opening stock",at:new Date().toISOString()},...current].slice(0,200));
@@ -218,6 +230,19 @@ export default function Home() {
   function addBatch(event:FormEvent<HTMLFormElement>){event.preventDefault();const product=products.find(item=>item.id===batchProductId);const quantity=Number(batchForm.quantity);if(!product||!batchForm.batchNo.trim()||!Number.isFinite(quantity)||quantity<=0){setNotice("Batch number aur valid quantity required hain.");return;}const batch:Batch={id:makeId(),batchNo:batchForm.batchNo.trim(),quantity,expiryDate:batchForm.expiryDate,receivedAt:new Date().toISOString()};const updated=normalizeProduct({...product,batches:[...product.batches,batch],quantity:product.quantity+quantity});setProducts(current=>current.map(item=>item.id===product.id?updated:item));setMovements(current=>[{id:makeId(),productId:product.id,productName:product.name,type:"IN",quantity,note:"New batch: "+batch.batchNo,at:new Date().toISOString()},...current].slice(0,200));setBatchProductId(null);setBatchForm({batchNo:"",quantity:"1",expiryDate:""});setNotice("New batch added for "+product.name);}
 
   function recordSale(event:FormEvent<HTMLFormElement>){event.preventDefault();const product=products.find(item=>item.id===saleForm.productId);const quantity=Number(saleForm.quantity);const unitPrice=Number(saleForm.unitPrice);if(!product){setNotice("Sale ke liye product select karein.");return;}if(!Number.isFinite(quantity)||quantity<=0||!Number.isFinite(unitPrice)||unitPrice<0){setNotice("Quantity aur selling price valid enter karein.");return;}if(quantity>product.quantity){setNotice("Available stock sirf "+product.quantity+" "+product.unit+" hai.");return;}let remaining=quantity;const batches=[...product.batches].sort((a,b)=>a.receivedAt.localeCompare(b.receivedAt)).map(batch=>{const used=Math.min(batch.quantity,remaining);remaining-=used;return {...batch,quantity:batch.quantity-used};});const revenue=quantity*unitPrice;const cost=quantity*product.costPrice;const sale:Sale={id:makeId(),productId:product.id,productName:product.name,quantity,unit:product.unit,unitPrice,unitCost:product.costPrice,revenue,cost,profit:revenue-cost,soldAt:saleForm.soldAt||today()};const updated=normalizeProduct({...product,batches,quantity:sumBatches(batches)});setProducts(current=>current.map(item=>item.id===product.id?updated:item));setSales(current=>[sale,...current].slice(0,1000));setMovements(current=>[{id:makeId(),productId:product.id,productName:product.name,type:"OUT",quantity,note:"Sale recorded · "+formatMoney(revenue),at:new Date().toISOString()},...current].slice(0,200));setSaleForm({productId:product.id,quantity:"1",unitPrice:String(product.sellingPrice),soldAt:today()});setNotice("Sale saved. Profit: "+formatMoney(sale.profit));}
+
+  function addSupplier(event:FormEvent<HTMLFormElement>){
+    event.preventDefault();
+    const name=supplierForm.name.trim();
+    if(!name){setNotice("Supplier name required hai.");return;}
+    if(suppliers.some(item=>item.name.toLowerCase()===name.toLowerCase())){setNotice("Ye supplier pehle se saved hai.");return;}
+    const supplier:Supplier={id:makeId(),name,contact:supplierForm.contact.trim(),notes:supplierForm.notes.trim(),createdAt:new Date().toISOString()};
+    setSuppliers(current=>[supplier,...current]);
+    setSupplierForm({name:"",contact:"",notes:""});
+    setNotice(name+" supplier saved.");
+  }
+
+  const reorderSuggestions=products.filter(product=>product.quantity<=product.lowStockAt).map(product=>({...product,suggestedQty:Math.max(0,(product.reorderToLevel??Math.max(product.lowStockAt*2,product.lowStockAt+1))-product.quantity)})).filter(product=>product.suggestedQty>0);
 
   function handleVoice() {
     setNotice("Hindi voice entry abhi connected nahi hai. Product form se stock add karein.");
@@ -289,6 +314,36 @@ export default function Home() {
               </div>
             </div>
 
+            {activeNav==="Suppliers & reorder" ? <div className="mt-7 space-y-6">
+              <div className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
+                <form onSubmit={addSupplier} className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6">
+                  <h2 className="text-base font-extrabold text-ink">Add supplier</h2>
+                  <p className="mt-1 text-xs text-slate-400">Supplier details is device par locally save honge.</p>
+                  <div className="mt-5 space-y-3">
+                    <input required maxLength={80} value={supplierForm.name} onChange={e=>setSupplierForm({...supplierForm,name:e.target.value})} placeholder="Supplier / distributor name" className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/>
+                    <input maxLength={40} value={supplierForm.contact} onChange={e=>setSupplierForm({...supplierForm,contact:e.target.value})} placeholder="Phone / contact (optional)" className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/>
+                    <textarea maxLength={240} value={supplierForm.notes} onChange={e=>setSupplierForm({...supplierForm,notes:e.target.value})} placeholder="Notes, delivery day, shop address..." rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/>
+                  </div>
+                  <button type="submit" className="mt-4 w-full rounded-xl bg-forest px-4 py-3 text-sm font-bold text-white">Save supplier</button>
+                </form>
+                <div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6">
+                  <div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Supplier directory</h2><p className="mt-1 text-xs text-slate-400">{suppliers.length} saved suppliers</p></div><span className="rounded-lg bg-[#eff8f1] px-3 py-2 text-xs font-bold text-forest">{products.filter(p=>p.supplierId).length} linked products</span></div>
+                  <div className="mt-4 max-h-[360px] space-y-3 overflow-y-auto">
+                    {suppliers.map(supplier=><div key={supplier.id} className="rounded-xl border border-slate-100 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold text-ink">{supplier.name}</p><p className="mt-1 text-xs text-slate-500">{supplier.contact||"No contact added"}</p>{supplier.notes?<p className="mt-1 text-[10px] text-slate-400">{supplier.notes}</p>:null}</div><span className="rounded-full bg-[#eff8f1] px-2.5 py-1 text-[10px] font-bold text-forest">{products.filter(p=>p.supplierId===supplier.id).length} items</span></div></div>)}
+                    {suppliers.length===0?<p className="py-10 text-center text-xs text-slate-400">Abhi supplier saved nahi hai. Pehla supplier add karein.</p>:null}
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Automatic reorder suggestions</h2><p className="mt-1 text-xs text-slate-400">Current stock low-stock threshold tak aate hi reorder quantity calculate hoti hai.</p></div><span className="rounded-full bg-amber-50 px-3 py-1.5 text-[10px] font-bold text-amber-700">{reorderSuggestions.length} items to review</span></div>
+                <div className="mt-4 space-y-3">
+                  {reorderSuggestions.map(product=>{const supplier=suppliers.find(item=>item.id===product.supplierId);return <div key={product.id} className="grid gap-3 rounded-xl border border-amber-100 bg-[#fffdf8] p-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="text-sm font-bold text-ink">{product.name}</p><p className="mt-1 text-xs text-slate-500">Available: {product.quantity} {product.unit} · Alert at: {product.lowStockAt} · Target: {product.reorderToLevel??Math.max(product.lowStockAt*2,product.lowStockAt+1)} {product.unit}</p><p className="mt-1 text-[10px] text-slate-500">Supplier: {supplier?.name||"Not assigned — edit product to link supplier"}</p></div><div className="text-left sm:text-right"><p className="text-lg font-extrabold text-forest">Order {product.suggestedQty} {product.unit}</p><p className="text-[10px] text-slate-400">Est. cost {formatMoney(product.suggestedQty*product.costPrice)}</p></div></div>})}
+                  {reorderSuggestions.length===0?<p className="py-10 text-center text-xs text-slate-400">Abhi reorder ki zaroorat nahi. Stock threshold se upar hai.</p>:null}
+                </div>
+                <p className="mt-4 text-[10px] text-slate-400">Formula: target stock level − current stock. Ye planning suggestion hai; purchase order ya supplier ko message automatically send nahi hota.</p>
+              </div>
+            </div> : null}
+
             {activeNav==="Sales & profit" ? <div className="mt-7 space-y-6">
               <div className="grid gap-4 sm:grid-cols-3"><MetricCard label="Total revenue" value={formatMoney(totalRevenue)} note={sales.length+" recorded sales"} icon={Wallet}/><MetricCard label="Cost of goods sold" value={formatMoney(totalCost)} note="Based on saved purchase cost" icon={Boxes}/><MetricCard label="Gross profit" value={formatMoney(totalProfit)} note="Revenue minus product cost" icon={TrendingUp} trend={totalProfit>=0?"up":"down"}/></div>
               <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
@@ -297,12 +352,12 @@ export default function Home() {
               </div>
             </div> : null}
 
-            <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {activeNav!=="Suppliers & reorder" ? <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard label="Products" value={String(products.length)} note="In your inventory" icon={Boxes} />
               <MetricCard label="Stock cost value" value={formatMoney(inventoryValue)} note="Based on purchase price" icon={Wallet} />
               <MetricCard label="Low stock / alerts" value={String(attentionCount)} note="Needs review" icon={Activity} trend={attentionCount ? "down" : undefined} />
               <MetricCard label="Expiry alerts" value={String(expiryCount)} note="Within 7 days or expired" icon={CalendarClock} />
-            </div>
+            </div> : null}
 
             {activeNav==="Overview" ? <div className="mt-6 rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Sales performance</h2><p className="mt-1 text-xs text-slate-400">Live analytics from your saved sales transactions</p></div><span className="rounded-full bg-[#eff8f1] px-3 py-1.5 text-[10px] font-bold text-forest">{reportSales.length} transactions</span></div>
@@ -312,7 +367,7 @@ export default function Home() {
               <p className="mt-4 text-[10px] text-slate-400">Reports use sale date and saved cost snapshots. Gross profit excludes rent, wages, tax, payment fees and other overheads.</p>
             </div> : null}
 
-            <div className="mt-6 grid gap-5 xl:grid-cols-[1.55fr_1fr]">
+            {activeNav!=="Suppliers & reorder" ? <div className="mt-6 grid gap-5 xl:grid-cols-[1.55fr_1fr]">
               <div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6">
                 <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Inventory health</h2><p className="mt-1 text-xs text-slate-400">Live summary calculated from saved products</p></div><span className="rounded-lg bg-[#eff8f1] px-3 py-2 text-xs font-semibold text-forest">Updated automatically</span></div>
                 <div className="mt-7 space-y-5">
@@ -375,7 +430,7 @@ export default function Home() {
             <div className="mt-6 flex flex-col items-start justify-between gap-3 rounded-2xl border border-dashed border-[#cbdccc] bg-[#f8fbf8] p-4 sm:flex-row sm:items-center sm:px-5">
               <div className="flex items-center gap-3"><div className="rounded-xl bg-white p-2.5 text-forest shadow-sm"><Command size={18} /></div><div><p className="text-xs font-bold text-ink">Made for Indian small businesses</p><p className="mt-1 text-[11px] text-slate-500">Hindi-first workflows • Simple inventory • Clear stock visibility</p></div></div>
               <span className="text-[10px] font-semibold text-slate-400">STOCKSAATHI AI · INVENTORY PREVIEW</span>
-            </div>
+            </div> : null}
           </div>
         </section>
       </div>
@@ -390,6 +445,7 @@ export default function Home() {
             <div className="grid grid-cols-2 gap-3"><div><label htmlFor="product-quantity" className="text-xs font-bold text-slate-600">Current quantity</label><input id="product-quantity" type="number" min="0" step="any" required value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-forest" /></div><div><label htmlFor="product-threshold" className="text-xs font-bold text-slate-600">Low-stock alert at</label><input id="product-threshold" type="number" min="0" step="any" required value={form.lowStockAt} onChange={(event) => setForm({ ...form, lowStockAt: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-forest" /></div></div>
             <div className="grid grid-cols-2 gap-3"><div><label htmlFor="product-cost" className="text-xs font-bold text-slate-600">Purchase price (₹)</label><input id="product-cost" type="number" min="0" step="0.01" required value={form.costPrice} onChange={(event) => setForm({ ...form, costPrice: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-forest" /></div><div><label htmlFor="product-selling" className="text-xs font-bold text-slate-600">Selling price (₹)</label><input id="product-selling" type="number" min="0" step="0.01" required value={form.sellingPrice} onChange={(event) => setForm({ ...form, sellingPrice: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-forest" /></div></div>
             <div><label htmlFor="product-expiry" className="text-xs font-bold text-slate-600">Expiry date (optional)</label><input id="product-expiry" type="date" value={form.expiryDate} onChange={(event) => setForm({ ...form, expiryDate: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-forest" /></div>
+            <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold text-slate-600">Preferred supplier</label><select value={form.supplierId} onChange={e=>setForm({...form,supplierId:e.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"><option value="">Not assigned</option>{suppliers.map(supplier=><option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></div><div><label className="text-xs font-bold text-slate-600">Reorder target quantity</label><input type="number" min="0" step="any" value={form.reorderToLevel} onChange={e=>setForm({...form,reorderToLevel:e.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/></div></div>
             <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setShowForm(false)} className="rounded-xl px-4 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-100">Cancel</button><button type="submit" className="rounded-xl bg-forest px-5 py-2.5 text-xs font-bold text-white hover:bg-[#225238]">{editingId ? "Save changes" : "Add product"}</button></div>
           </form>
         </div>
