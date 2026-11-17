@@ -46,6 +46,8 @@ Inventory, movement history, sales, expenses and supplier records are stored in 
 - Batch and movement history are local to the same browser profile/device; the movement ledger is capped at 200 entries.
 
 - Data persists across refreshes in the same browser profile.
+- On startup, storage candidates are checked from newest to oldest; malformed or structurally invalid entries are skipped so an older readable inventory can be recovered.
+- If the current version is invalid, recovered older data is shown in recovery mode and automatic writes are paused. The damaged current entry is not overwritten; the user can export recovered records and explicitly confirm a validated restore to resume persistence. If no valid saved dataset exists, demo data is not exported as a business backup.
 - Data is not synced between devices or users.
 - Clearing browser storage can remove this local inventory.
 - This is not a secure multi-user database and must not be treated as a cloud backup.
@@ -63,7 +65,8 @@ Inventory, movement history, sales, expenses and supplier records are stored in 
 
 ## Backup integrity and recovery validation
 
-- Each JSON backup carries a SHA-256 digest over the complete version-4 data payload. Restore recalculates the digest before allowing the confirmation preview; checksum mismatch is rejected.
+- New JSON backups carry a SHA-256 digest over the complete version-4 data payload. Restore recalculates the digest before allowing the confirmation preview; checksum mismatch is rejected.
+- Earlier version-1 backup envelopes created before checksum support remain restorable after full structural and record validation. Because those legacy files have no digest, the UI labels them clearly as legacy/no-checksum and does not claim cryptographic integrity verification. New exports always include SHA-256.
 - The checksum detects accidental corruption or edits but is not a digital signature and does not prove who created the file. Never treat an untrusted backup as authenticated.
 - Restore rejects files over 10 MB, malformed JSON, wrong app identity, unsupported backup/schema versions, missing collections, invalid required fields, invalid dates/numbers, duplicate IDs within record collections or batch IDs, product/batch quantity mismatches, and inconsistent sales arithmetic.
 - JSON is parsed as data only; no uploaded content is executed.
