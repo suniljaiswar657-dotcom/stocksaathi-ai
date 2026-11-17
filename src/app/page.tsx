@@ -327,6 +327,7 @@ export default function Home() {
   function processAssistantInput(raw:string){
     const saleAction=parseNaturalSale(raw);
     if(saleAction){
+      setPendingStockAction(null);
       setPendingSaleAction({productId:saleAction.product.id,productName:saleAction.product.name,quantity:saleAction.quantity,unitPrice:saleAction.unitPrice});
       const revenue=saleAction.quantity*saleAction.unitPrice;
       const profit=revenue-saleAction.quantity*saleAction.product.costPrice;
@@ -335,6 +336,7 @@ export default function Home() {
     }
     const action=parseStockAction(raw);
     if(action){
+      setPendingSaleAction(null);
       setPendingStockAction({productId:action.product.id,productName:action.product.name,quantity:action.quantity,direction:action.direction});
       const verb=action.direction==="IN"?"add":"remove";
       setAssistantMessages(current=>[...current,{role:"user",text:raw},{role:"assistant",text:"Confirmation required: "+action.quantity+" "+action.product.unit+" "+action.product.name+" ke stock mein "+verb+" honge. Current stock "+action.product.quantity+" "+action.product.unit+". Confirm karne ke baad hi inventory change hogi."}].slice(-30));
