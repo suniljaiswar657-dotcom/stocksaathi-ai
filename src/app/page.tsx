@@ -10,6 +10,7 @@ import {
 
 type Batch = { id:string; batchNo:string; quantity:number; expiryDate:string; receivedAt:string };
 type StockMovement = { id:string; productId:string; productName:string; type:'IN'|'OUT'|'ADJUSTMENT'; quantity:number; note:string; at:string };
+type Sale = { id:string; productId:string; productName:string; quantity:number; unit:string; unitPrice:number; unitCost:number; revenue:number; cost:number; profit:number; soldAt:string };
 type Product = {
   id: string;
   name: string;
@@ -25,7 +26,8 @@ type Product = {
 
 type ProductStatus = "Healthy" | "Low stock" | "Expiring" | "Expired";
 
-const STORAGE_KEY = "stocksaathi.inventory.v2";
+const STORAGE_KEY = "stocksaathi.inventory.v3";
+const PREVIOUS_STORAGE_KEY = "stocksaathi.inventory.v2";
 const LEGACY_STORAGE_KEY = "stocksaathi.inventory.v1";
 const makeId = () => typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2,7);
 const sumBatches = (b:Batch[]) => b.reduce((n,x)=>n+Math.max(0,x.quantity),0);
@@ -92,6 +94,8 @@ function MetricCard({
 export default function Home() {
   const [products, setProducts] = useState<Product[]>(initialProducts.map(normalizeProduct));
   const [movements,setMovements]=useState<StockMovement[]>([]);
+  const [sales,setSales]=useState<Sale[]>([]);
+  const [saleForm,setSaleForm]=useState({productId:'',quantity:'1',unitPrice:'',soldAt:today()});
   const [batchProductId,setBatchProductId]=useState<string|null>(null);
   const [batchForm,setBatchForm]=useState({batchNo:'',quantity:'1',expiryDate:''});
   const [hydrated, setHydrated] = useState(false);
@@ -105,8 +109,8 @@ export default function Home() {
 
   useEffect(() => {
     try {
-      const saved=window.localStorage.getItem(STORAGE_KEY); const legacy=window.localStorage.getItem(LEGACY_STORAGE_KEY); const source=saved||legacy;
-      if(source){ const parsed:unknown=JSON.parse(source); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)&&"products" in parsed){const data=parsed as {products:Product[];movements?:StockMovement[]};if(Array.isArray(data.products))setProducts(data.products.map(normalizeProduct));if(Array.isArray(data.movements))setMovements(data.movements);}else if(Array.isArray(parsed)){setProducts((parsed as Product[]).map(normalizeProduct));setNotice("Purana inventory safely migrate ho gaya. Existing products preserve hain.");}}
+      const saved=window.localStorage.getItem(STORAGE_KEY); const previous=window.localStorage.getItem(PREVIOUS_STORAGE_KEY); const legacy=window.localStorage.getItem(LEGACY_STORAGE_KEY); const source=saved||previous||legacy;
+      if(source){ const parsed:unknown=JSON.parse(source); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)&&"products" in parsed){const data=parsed as {products:Product[];movements?:StockMovement[];sales?:Sale[]};if(Array.isArray(data.products))setProducts(data.products.map(normalizeProduct));if(Array.isArray(data.movements))setMovements(data.movements);if(Array.isArray(data.sales))setSales(data.sales);}else if(Array.isArray(parsed)){setProducts((parsed as Product[]).map(normalizeProduct));setNotice("Purana inventory safely migrate ho gaya. Existing products preserve hain.");}}
     } catch {
       setNotice("Saved inventory could not be read. Demo data is shown.");
     } finally {
@@ -117,11 +121,11 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({version:2,products,movements}));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({version:3,products,movements,sales}));
     } catch {
       setNotice("Device storage is full. Changes may not persist.");
     }
-  }, [products, movements, hydrated]);
+  }, [products, movements, sales, hydrated]);
 
   useEffect(() => {
     if (!notice) return;
@@ -139,6 +143,9 @@ export default function Home() {
   const attentionCount = products.filter((product) => getStatus(product) !== "Healthy").length;
   const expiryCount = products.filter((product) => ["Expiring", "Expired"].includes(getStatus(product))).length;
   const inventoryValue = products.reduce((sum, product) => sum + product.quantity * product.costPrice, 0);
+  const totalRevenue=sales.reduce((sum,sale)=>sum+sale.revenue,0);
+  const totalCost=sales.reduce((sum,sale)=>sum+sale.cost,0);
+  const totalProfit=sales.reduce((sum,sale)=>sum+sale.profit,0);
 
   function openAdd() {
     setEditingId(null);
@@ -200,6 +207,8 @@ export default function Home() {
   function adjustStock(product:Product,amount:number){const next=product.quantity+amount;if(next<0){setNotice("Stock zero se kam nahi ho sakta.");return;}let batches=[...product.batches];if(amount>0)batches.push({id:makeId(),batchNo:"MANUAL-IN",quantity:amount,expiryDate:"",receivedAt:new Date().toISOString()});else{let left=-amount;batches=batches.sort((a,b)=>a.receivedAt.localeCompare(b.receivedAt)).map(batch=>{const take=Math.min(batch.quantity,left);left-=take;return {...batch,quantity:batch.quantity-take};});}const updated=normalizeProduct({...product,batches,quantity:sumBatches(batches)});setProducts(current=>current.map(item=>item.id===product.id?updated:item));setMovements(current=>[{id:makeId(),productId:product.id,productName:product.name,type:amount>0?"IN":"OUT",quantity:Math.abs(amount),note:amount>0?"Manual stock received":"Manual stock reduction (FIFO)",at:new Date().toISOString()},...current].slice(0,200));setNotice(product.name+" stock updated: "+updated.quantity+" "+product.unit);}
 
   function addBatch(event:FormEvent<HTMLFormElement>){event.preventDefault();const product=products.find(item=>item.id===batchProductId);const quantity=Number(batchForm.quantity);if(!product||!batchForm.batchNo.trim()||!Number.isFinite(quantity)||quantity<=0){setNotice("Batch number aur valid quantity required hain.");return;}const batch:Batch={id:makeId(),batchNo:batchForm.batchNo.trim(),quantity,expiryDate:batchForm.expiryDate,receivedAt:new Date().toISOString()};const updated=normalizeProduct({...product,batches:[...product.batches,batch],quantity:product.quantity+quantity});setProducts(current=>current.map(item=>item.id===product.id?updated:item));setMovements(current=>[{id:makeId(),productId:product.id,productName:product.name,type:"IN",quantity,note:"New batch: "+batch.batchNo,at:new Date().toISOString()},...current].slice(0,200));setBatchProductId(null);setBatchForm({batchNo:"",quantity:"1",expiryDate:""});setNotice("New batch added for "+product.name);}
+
+  function recordSale(event:FormEvent<HTMLFormElement>){event.preventDefault();const product=products.find(item=>item.id===saleForm.productId);const quantity=Number(saleForm.quantity);const unitPrice=Number(saleForm.unitPrice);if(!product){setNotice("Sale ke liye product select karein.");return;}if(!Number.isFinite(quantity)||quantity<=0||!Number.isFinite(unitPrice)||unitPrice<0){setNotice("Quantity aur selling price valid enter karein.");return;}if(quantity>product.quantity){setNotice("Available stock sirf "+product.quantity+" "+product.unit+" hai.");return;}let remaining=quantity;const batches=[...product.batches].sort((a,b)=>a.receivedAt.localeCompare(b.receivedAt)).map(batch=>{const used=Math.min(batch.quantity,remaining);remaining-=used;return {...batch,quantity:batch.quantity-used};});const revenue=quantity*unitPrice;const cost=quantity*product.costPrice;const sale:Sale={id:makeId(),productId:product.id,productName:product.name,quantity,unit:product.unit,unitPrice,unitCost:product.costPrice,revenue,cost,profit:revenue-cost,soldAt:saleForm.soldAt||today()};const updated=normalizeProduct({...product,batches,quantity:sumBatches(batches)});setProducts(current=>current.map(item=>item.id===product.id?updated:item));setSales(current=>[sale,...current].slice(0,1000));setMovements(current=>[{id:makeId(),productId:product.id,productName:product.name,type:"OUT",quantity,note:"Sale recorded · "+formatMoney(revenue),at:new Date().toISOString()},...current].slice(0,200));setSaleForm({productId:product.id,quantity:"1",unitPrice:String(product.sellingPrice),soldAt:today()});setNotice("Sale saved. Profit: "+formatMoney(sale.profit));}
 
   function handleVoice() {
     setNotice("Hindi voice entry abhi connected nahi hai. Product form se stock add karein.");
@@ -270,6 +279,14 @@ export default function Home() {
                 <button onClick={openAdd} className="inline-flex items-center gap-2 rounded-xl bg-forest px-4 py-3 text-sm font-bold text-white shadow-lg shadow-forest/15 transition hover:bg-[#225238]"><PackagePlus size={17} /> Add stock</button>
               </div>
             </div>
+
+            {activeNav==="Sales & profit" ? <div className="mt-7 space-y-6">
+              <div className="grid gap-4 sm:grid-cols-3"><MetricCard label="Total revenue" value={formatMoney(totalRevenue)} note={sales.length+" recorded sales"} icon={Wallet}/><MetricCard label="Cost of goods sold" value={formatMoney(totalCost)} note="Based on saved purchase cost" icon={Boxes}/><MetricCard label="Gross profit" value={formatMoney(totalProfit)} note="Revenue minus product cost" icon={TrendingUp} trend={totalProfit>=0?"up":"down"}/></div>
+              <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+                <form onSubmit={recordSale} className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6"><h2 className="text-base font-extrabold text-ink">Record a sale</h2><p className="mt-1 text-xs text-slate-400">Sale save hote hi inventory FIFO ke hisaab se reduce hoga.</p><div className="mt-5 space-y-4"><div><label className="text-xs font-bold text-slate-600">Product</label><select required value={saleForm.productId} onChange={e=>{const p=products.find(x=>x.id===e.target.value);setSaleForm({...saleForm,productId:e.target.value,unitPrice:p?String(p.sellingPrice):''});}} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"><option value="">Select product</option>{products.filter(p=>p.quantity>0).map(p=><option key={p.id} value={p.id}>{p.name} · {p.quantity} {p.unit} available</option>)}</select></div><div><label className="text-xs font-bold text-slate-600">Quantity sold</label><input required type="number" min="0.01" step="any" value={saleForm.quantity} onChange={e=>setSaleForm({...saleForm,quantity:e.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/></div><div><label className="text-xs font-bold text-slate-600">Selling price per unit (₹)</label><input required type="number" min="0" step="0.01" value={saleForm.unitPrice} onChange={e=>setSaleForm({...saleForm,unitPrice:e.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/></div><div><label className="text-xs font-bold text-slate-600">Sale date</label><input type="date" value={saleForm.soldAt} onChange={e=>setSaleForm({...saleForm,soldAt:e.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/></div></div><div className="mt-5 rounded-xl bg-[#f2f8f3] p-4"><p className="text-xs text-slate-500">Estimated gross profit</p><p className="mt-1 text-xl font-extrabold text-forest">{formatMoney((Number(saleForm.quantity)||0)*((Number(saleForm.unitPrice)||0)-(products.find(p=>p.id===saleForm.productId)?.costPrice||0)))}</p></div><button type="submit" disabled={!products.some(p=>p.quantity>0)} className="mt-5 w-full rounded-xl bg-forest px-4 py-3 text-sm font-bold text-white disabled:opacity-40">Save sale & update stock</button></form>
+                <div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6"><h2 className="text-base font-extrabold text-ink">Sales history</h2><p className="mt-1 text-xs text-slate-400">Latest recorded transactions · maximum 1,000</p><div className="mt-4 max-h-[520px] space-y-3 overflow-y-auto">{sales.map(sale=><div key={sale.id} className="rounded-xl border border-slate-100 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold text-ink">{sale.productName}</p><p className="mt-1 text-[10px] text-slate-500">{sale.quantity} {sale.unit} × {formatMoney(sale.unitPrice)} · {sale.soldAt}</p></div><div className="text-right"><p className="text-sm font-extrabold text-ink">{formatMoney(sale.revenue)}</p><p className={`mt-1 text-[10px] font-bold ${sale.profit>=0?"text-emerald-700":"text-rose-600"}`}>Profit {formatMoney(sale.profit)}</p></div></div></div>)}{sales.length===0?<p className="py-10 text-center text-xs text-slate-400">Abhi koi sale record nahi hui.</p>:null}</div></div>
+              </div>
+            </div> : null}
 
             <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard label="Products" value={String(products.length)} note="In your inventory" icon={Boxes} />
