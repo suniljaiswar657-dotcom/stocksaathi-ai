@@ -61,6 +61,16 @@ Inventory, movement history, sales, expenses and supplier records are stored in 
 - Restore replaces data in the current browser profile. It is not a merge, cloud sync, or automatic scheduled backup. Users should download and safely store a backup before restoring another one.
 - Backup files contain sensitive shop and financial records; users are responsible for protecting the downloaded file.
 
+## Backup integrity and recovery validation
+
+- Each JSON backup carries a SHA-256 digest over the complete version-4 data payload. Restore recalculates the digest before allowing the confirmation preview; checksum mismatch is rejected.
+- The checksum detects accidental corruption or edits but is not a digital signature and does not prove who created the file. Never treat an untrusted backup as authenticated.
+- Restore rejects files over 10 MB, malformed JSON, wrong app identity, unsupported backup/schema versions, missing collections, invalid required fields, invalid dates/numbers, duplicate IDs within record collections or batch IDs, product/batch quantity mismatches, and inconsistent sales arithmetic.
+- JSON is parsed as data only; no uploaded content is executed.
+- Before writing, restore reads the current localStorage value. After writing, it reads back and compares the exact serialized value. If the write or read-back check fails, it attempts to restore the previous stored value and does not update React state.
+- Recovery rollback is best-effort: browser storage quota/security failures can also prevent rollback. Keep an external backup before restoring.
+- Validation test matrix: malformed JSON; missing data collection; wrong app identity; wrong backup version; wrong data schema version; duplicate product/sale/expense/audit IDs; duplicate batch IDs; altered payload with stale digest; mismatched product quantity versus batch totals; inconsistent sales revenue/cost/profit; oversized file; localStorage write failure; read-back mismatch. Each invalid backup must be rejected before preview, and storage failures must leave in-memory UI state unchanged.
+
 ## Current limitations
 
 - Reports are local to the browser profile and are not consolidated across devices or multiple shop users.
