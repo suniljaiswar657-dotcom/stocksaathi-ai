@@ -104,6 +104,8 @@ export default function Home() {
   const [movements,setMovements]=useState<StockMovement[]>([]);
   const [sales,setSales]=useState<Sale[]>([]);
   const [expenses,setExpenses]=useState<Expense[]>([]);
+  const [monthlyExpenseBudget,setMonthlyExpenseBudget]=useState(0);
+  const [budgetInput,setBudgetInput]=useState("");
   const [suppliers,setSuppliers]=useState<Supplier[]>([]);
   const [supplierForm,setSupplierForm]=useState({name:"",contact:"",notes:""});
   const [reportFrom,setReportFrom]=useState(dateInDays(-29));
@@ -132,7 +134,7 @@ export default function Home() {
   useEffect(() => {
     try {
       const saved=window.localStorage.getItem(STORAGE_KEY); const previous=window.localStorage.getItem(PREVIOUS_STORAGE_KEY); const older=window.localStorage.getItem(OLDER_STORAGE_KEY); const legacy=window.localStorage.getItem(LEGACY_STORAGE_KEY); const source=saved||previous||older||legacy;
-      if(source){ const parsed:unknown=JSON.parse(source); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)&&"products" in parsed){const data=parsed as {products:Product[];movements?:StockMovement[];sales?:Sale[];suppliers?:Supplier[];expenses?:Expense[]};if(Array.isArray(data.products))setProducts(data.products.map(normalizeProduct));if(Array.isArray(data.movements))setMovements(data.movements);if(Array.isArray(data.sales))setSales(data.sales);if(Array.isArray(data.suppliers))setSuppliers(data.suppliers);if(Array.isArray(data.expenses))setExpenses(data.expenses);}else if(Array.isArray(parsed)){setProducts((parsed as Product[]).map(normalizeProduct));setNotice("Purana inventory safely migrate ho gaya. Existing products preserve hain.");}}
+      if(source){ const parsed:unknown=JSON.parse(source); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)&&"products" in parsed){const data=parsed as {products:Product[];movements?:StockMovement[];sales?:Sale[];suppliers?:Supplier[];expenses?:Expense[]};if(Array.isArray(data.products))setProducts(data.products.map(normalizeProduct));if(Array.isArray(data.movements))setMovements(data.movements);if(Array.isArray(data.sales))setSales(data.sales);if(Array.isArray(data.suppliers))setSuppliers(data.suppliers);if(Array.isArray(data.expenses))setExpenses(data.expenses);if(typeof data.monthlyExpenseBudget==="number"&&Number.isFinite(data.monthlyExpenseBudget)&&data.monthlyExpenseBudget>=0){setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));}}else if(Array.isArray(parsed)){setProducts((parsed as Product[]).map(normalizeProduct));setNotice("Purana inventory safely migrate ho gaya. Existing products preserve hain.");}}
     } catch {
       setNotice("Saved inventory could not be read. Demo data is shown.");
     } finally {
@@ -143,11 +145,11 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({version:4,products,movements,sales,suppliers,expenses}));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({version:4,products,movements,sales,suppliers,expenses,monthlyExpenseBudget}));
     } catch {
       setNotice("Device storage is full. Changes may not persist.");
     }
-  }, [products, movements, sales, suppliers, expenses, hydrated]);
+  }, [products, movements, sales, suppliers, expenses, monthlyExpenseBudget, hydrated]);
 
   useEffect(() => {
     if (!notice) return;
@@ -170,6 +172,12 @@ export default function Home() {
   const totalProfit=sales.reduce((sum,sale)=>sum+sale.profit,0);
   const totalExpenses=expenses.reduce((sum,expense)=>sum+expense.amount,0);
   const netProfit=totalProfit-totalExpenses;
+  const currentMonth=today().slice(0,7);
+  const monthExpenses=useMemo(()=>expenses.filter(expense=>expense.spentAt.slice(0,7)===currentMonth),[expenses,currentMonth]);
+  const monthExpenseTotal=monthExpenses.reduce((sum,expense)=>sum+expense.amount,0);
+  const budgetUsage=monthlyExpenseBudget>0?monthExpenseTotal/monthlyExpenseBudget*100:0;
+  const budgetRemaining=monthlyExpenseBudget-monthExpenseTotal;
+  const monthCategoryTotals=useMemo(()=>{const groups=new Map<string,number>();for(const expense of monthExpenses)groups.set(expense.category,(groups.get(expense.category)||0)+expense.amount);return Array.from(groups.entries()).map(([category,amount])=>({category,amount})).sort((x,y)=>y.amount-x.amount);},[monthExpenses]);
   const reportSales=useMemo(()=>sales.filter(sale=>sale.soldAt>=reportFrom&&sale.soldAt<=reportTo).sort((a,b)=>a.soldAt.localeCompare(b.soldAt)),[sales,reportFrom,reportTo]);
   const reportRevenue=reportSales.reduce((sum,sale)=>sum+sale.revenue,0);
   const reportCost=reportSales.reduce((sum,sale)=>sum+sale.cost,0);
@@ -343,13 +351,24 @@ export default function Home() {
     description=description.replace(/^(ka|ke|ki|the)\s+/,"").replace(/\s+(ka|ke|ki)$/,"").trim();
     if(!description)return null;
     const category=/\b(bijli|electricity|power|water|paani|internet|wifi|gas|telephone|mobile recharge|utility|bill)\b/.test(description)?"Utilities"
-      :/\b(rent|kiraya|lease)\b/.test(description)?"Rent"
-      :/\b(salary|wages|mazdoori|staff)\b/.test(description)?"Staff"
-      :/\b(petrol|diesel|transport|delivery|fuel|travel)\b/.test(description)?"Transport"
-      :/\b(repair|maintenance|marammat)\b/.test(description)?"Repairs"
-      :/\b(packaging|packing|wrapper)\b/.test(description)?"Packaging":"Other";
+      :/\b(rent|kiraya|lease|shop rent)\b/.test(description)?"Rent"
+      :/\b(salary|wages|mazdoori|staff|worker|helper)\b/.test(description)?"Staff"
+      :/\b(petrol|diesel|transport|delivery|fuel|travel|auto fare|rickshaw)\b/.test(description)?"Transport"
+      :/\b(repair|maintenance|marammat|plumber|electrician)\b/.test(description)?"Repairs"
+      :/\b(packaging|packing|wrapper|carry bag)\b/.test(description)?"Packaging"
+      :/\b(advertising|advertisement|marketing|promotion|poster)\b/.test(description)?"Marketing"
+      :/\b(bank charge|bank fee|transaction fee|upi charge|payment fee)\b/.test(description)?"Bank charges"
+      :/\b(purchase|stationery|cleaning|supplies|samaan)\b/.test(description)?"Supplies"
+      :/\b(tea|chai|food|lunch|snacks|nashta|khana)\b/.test(description)?"Food & refreshments":"Other";
     const spentAt=/\b(kal|yesterday)\b/.test(q)?dateInDays(-1):today();
     return {description,category,amount,spentAt};
+  }
+
+  function saveMonthlyExpenseBudget(){
+    const amount=Number(budgetInput);
+    if(!Number.isFinite(amount)||amount<0){setNotice("Monthly budget valid amount enter karein.");return;}
+    setMonthlyExpenseBudget(amount);
+    setNotice(amount===0?"Monthly expense budget disabled.":"Monthly expense budget saved: "+formatMoney(amount));
   }
 
   function confirmAssistantExpense(){
@@ -413,6 +432,10 @@ export default function Home() {
       const day=sales.filter(x=>x.soldAt===today());const revenue=day.reduce((n,x)=>n+x.revenue,0);
       if(/\b(today|aaj)\b/.test(q))return "Aaj "+day.length+" sales record hui. Revenue "+formatMoney(revenue)+".";
       return "Saved sales ka total revenue "+formatMoney(totalRevenue)+", product cost "+formatMoney(totalCost)+" hai.";
+    }
+    if(/\b(budget|monthly limit|mahine ka budget|mahina budget)\b/.test(q)){
+      if(monthlyExpenseBudget<=0)return "Abhi monthly expense budget set nahi hai. Sales & profit mein monthly budget enter karein.";
+      return "Is month expenses "+formatMoney(monthExpenseTotal)+" / "+formatMoney(monthlyExpenseBudget)+" ("+Math.round(budgetUsage)+"%). "+(budgetRemaining<0?"Budget "+formatMoney(Math.abs(budgetRemaining))+" se cross ho gaya.":"Budget mein "+formatMoney(budgetRemaining)+" remaining hai.")+" Top categories: "+(monthCategoryTotals.slice(0,3).map(x=>x.category+" "+formatMoney(x.amount)).join(", ")||"No expenses")+".";
     }
     if(/\b(expense|expenses|kharcha|kharch|spending|bijli bill)\b/.test(q)){
       const day=expenses.filter(x=>x.spentAt===today());const dayTotal=day.reduce((n,x)=>n+x.amount,0);
@@ -570,6 +593,12 @@ export default function Home() {
                 <form onSubmit={recordSale} className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6"><h2 className="text-base font-extrabold text-ink">Record a sale</h2><p className="mt-1 text-xs text-slate-400">Sale save hote hi inventory FIFO ke hisaab se reduce hoga.</p><div className="mt-5 space-y-4"><div><label className="text-xs font-bold text-slate-600">Product</label><select required value={saleForm.productId} onChange={e=>{const p=products.find(x=>x.id===e.target.value);setSaleForm({...saleForm,productId:e.target.value,unitPrice:p?String(p.sellingPrice):''});}} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"><option value="">Select product</option>{products.filter(p=>p.quantity>0).map(p=><option key={p.id} value={p.id}>{p.name} · {p.quantity} {p.unit} available</option>)}</select></div><div><label className="text-xs font-bold text-slate-600">Quantity sold</label><input required type="number" min="0.01" step="any" value={saleForm.quantity} onChange={e=>setSaleForm({...saleForm,quantity:e.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/></div><div><label className="text-xs font-bold text-slate-600">Selling price per unit (₹)</label><input required type="number" min="0" step="0.01" value={saleForm.unitPrice} onChange={e=>setSaleForm({...saleForm,unitPrice:e.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/></div><div><label className="text-xs font-bold text-slate-600">Sale date</label><input type="date" value={saleForm.soldAt} onChange={e=>setSaleForm({...saleForm,soldAt:e.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/></div></div><div className="mt-5 rounded-xl bg-[#f2f8f3] p-4"><p className="text-xs text-slate-500">Estimated gross profit</p><p className="mt-1 text-xl font-extrabold text-forest">{formatMoney((Number(saleForm.quantity)||0)*((Number(saleForm.unitPrice)||0)-(products.find(p=>p.id===saleForm.productId)?.costPrice||0)))}</p></div><button type="submit" disabled={!products.some(p=>p.quantity>0)} className="mt-5 w-full rounded-xl bg-forest px-4 py-3 text-sm font-bold text-white disabled:opacity-40">Save sale & update stock</button></form>
                 <div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6"><h2 className="text-base font-extrabold text-ink">Sales history</h2><p className="mt-1 text-xs text-slate-400">Latest recorded transactions · maximum 1,000</p><div className="mt-4 max-h-[520px] space-y-3 overflow-y-auto">{sales.map(sale=><div key={sale.id} className="rounded-xl border border-slate-100 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold text-ink">{sale.productName}</p><p className="mt-1 text-[10px] text-slate-500">{sale.quantity} {sale.unit} × {formatMoney(sale.unitPrice)} · {sale.soldAt}</p></div><div className="text-right"><p className="text-sm font-extrabold text-ink">{formatMoney(sale.revenue)}</p><p className={`mt-1 text-[10px] font-bold ${sale.profit>=0?"text-emerald-700":"text-rose-600"}`}>Profit {formatMoney(sale.profit)}</p></div></div></div>)}{sales.length===0?<p className="py-10 text-center text-xs text-slate-400">Abhi koi sale record nahi hui.</p>:null}</div></div>
               </div>
+              <div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Monthly expense budget</h2><p className="mt-1 text-xs text-slate-400">Set a monthly spending limit · {currentMonth}</p></div><span className={monthlyExpenseBudget>0&&monthExpenseTotal>monthlyExpenseBudget?"rounded-full bg-rose-50 px-3 py-1.5 text-[10px] font-bold text-rose-700":"rounded-full bg-[#eff8f1] px-3 py-1.5 text-[10px] font-bold text-forest"}>{monthlyExpenseBudget>0?(monthExpenseTotal>monthlyExpenseBudget?"Budget exceeded":"Budget tracking"):"Budget not set"}</span></div>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row"><div className="flex-1"><label className="text-xs font-bold text-slate-600">Monthly limit (₹)</label><input type="number" min="0" step="0.01" value={budgetInput} onChange={e=>setBudgetInput(e.target.value)} placeholder="e.g. 10000" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/></div><button type="button" onClick={saveMonthlyExpenseBudget} className="self-end rounded-xl bg-forest px-5 py-3 text-xs font-bold text-white">Save budget</button></div>
+                {monthlyExpenseBudget>0?<div className="mt-5"><div className="flex items-center justify-between gap-3 text-xs"><span className="font-bold text-ink">{formatMoney(monthExpenseTotal)} spent</span><span className="text-slate-500">of {formatMoney(monthlyExpenseBudget)} · {Math.round(budgetUsage)}%</span></div><div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${budgetUsage>=100?"bg-rose-500":budgetUsage>=80?"bg-amber-500":"bg-emerald-600"}`} style={{width:`${Math.min(100,budgetUsage)}%`}}/></div><p className={`mt-2 text-xs font-semibold ${budgetRemaining<0?"text-rose-700":budgetUsage>=80?"text-amber-700":"text-emerald-700"}`}>{budgetRemaining<0?"Budget exceeded by "+formatMoney(Math.abs(budgetRemaining)):formatMoney(budgetRemaining)+" remaining this month"}</p>{budgetUsage>=100?<p className="mt-2 rounded-lg bg-rose-50 p-3 text-xs font-bold text-rose-700">Alert: Monthly expense budget cross ho gaya. Spending review zaroori hai.</p>:budgetUsage>=80?<p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs font-bold text-amber-700">Warning: Monthly budget ka 80% ya zyada use ho chuka hai.</p>:null}</div>:<p className="mt-4 text-xs text-slate-500">Budget set karne ke baad 80% par warning aur 100% par exceeded alert dikhega.</p>}
+              </div>
+              <div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6"><div><h2 className="text-base font-extrabold text-ink">This month · spending analysis</h2><p className="mt-1 text-xs text-slate-400">Category-wise confirmed expenses · {monthExpenses.length} records</p></div><div className="mt-4 space-y-3">{monthCategoryTotals.map(item=><div key={item.category}><div className="flex items-center justify-between gap-3 text-xs"><span className="font-semibold text-ink">{item.category}</span><span className="font-bold text-ink">{formatMoney(item.amount)}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-forest" style={{width:`${monthExpenseTotal>0?item.amount/monthExpenseTotal*100:0}%`}}/></div></div>)}{monthCategoryTotals.length===0?<p className="py-6 text-center text-xs text-slate-400">Is month abhi koi expense record nahi hua.</p>:null}</div><div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">Monthly expenses: <strong className="text-ink">{formatMoney(monthExpenseTotal)}</strong></div></div>
               <div className="mt-6 rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Expense history</h2><p className="mt-1 text-xs text-slate-400">Confirmed expenses · latest 2,000 records</p></div><span className="text-sm font-extrabold text-ink">{formatMoney(totalExpenses)}</span></div><div className="mt-4 max-h-72 space-y-3 overflow-y-auto">{expenses.map(expense=><div key={expense.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 p-3"><div><p className="text-sm font-bold text-ink">{expense.description}</p><p className="mt-1 text-[10px] text-slate-500">{expense.category} · {expense.spentAt}</p></div><span className="text-sm font-extrabold text-ink">{formatMoney(expense.amount)}</span></div>)}{expenses.length===0?<p className="py-8 text-center text-xs text-slate-400">Abhi koi expense record nahi hua.</p>:null}</div></div>
             </div> : null}
 
