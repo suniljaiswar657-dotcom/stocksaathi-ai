@@ -12,6 +12,7 @@ type Batch = { id:string; batchNo:string; quantity:number; expiryDate:string; re
 type StockMovement = { id:string; productId:string; productName:string; type:'IN'|'OUT'|'ADJUSTMENT'; quantity:number; note:string; at:string };
 type Sale = { id:string; productId:string; productName:string; quantity:number; unit:string; unitPrice:number; unitCost:number; revenue:number; cost:number; profit:number; soldAt:string };
 type Supplier = { id:string; name:string; contact:string; notes:string; createdAt:string };
+type Expense = { id:string; description:string; category:string; amount:number; spentAt:string; createdAt:string };
 type Product = {
   id: string;
   name: string;
@@ -102,6 +103,7 @@ export default function Home() {
   const [products, setProducts] = useState<Product[]>(initialProducts.map(normalizeProduct));
   const [movements,setMovements]=useState<StockMovement[]>([]);
   const [sales,setSales]=useState<Sale[]>([]);
+  const [expenses,setExpenses]=useState<Expense[]>([]);
   const [suppliers,setSuppliers]=useState<Supplier[]>([]);
   const [supplierForm,setSupplierForm]=useState({name:"",contact:"",notes:""});
   const [reportFrom,setReportFrom]=useState(dateInDays(-29));
@@ -125,11 +127,12 @@ export default function Home() {
   const [stopSpeech,setStopSpeech]=useState<(()=>void)|null>(null);
   const [pendingStockAction,setPendingStockAction]=useState<{productId:string;productName:string;quantity:number;direction:"IN"|"OUT"}|null>(null);
   const [pendingSaleAction,setPendingSaleAction]=useState<{productId:string;productName:string;quantity:number;unitPrice:number}|null>(null);
+  const [pendingExpenseAction,setPendingExpenseAction]=useState<{description:string;category:string;amount:number;spentAt:string}|null>(null);
 
   useEffect(() => {
     try {
       const saved=window.localStorage.getItem(STORAGE_KEY); const previous=window.localStorage.getItem(PREVIOUS_STORAGE_KEY); const older=window.localStorage.getItem(OLDER_STORAGE_KEY); const legacy=window.localStorage.getItem(LEGACY_STORAGE_KEY); const source=saved||previous||older||legacy;
-      if(source){ const parsed:unknown=JSON.parse(source); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)&&"products" in parsed){const data=parsed as {products:Product[];movements?:StockMovement[];sales?:Sale[];suppliers?:Supplier[]};if(Array.isArray(data.products))setProducts(data.products.map(normalizeProduct));if(Array.isArray(data.movements))setMovements(data.movements);if(Array.isArray(data.sales))setSales(data.sales);if(Array.isArray(data.suppliers))setSuppliers(data.suppliers);}else if(Array.isArray(parsed)){setProducts((parsed as Product[]).map(normalizeProduct));setNotice("Purana inventory safely migrate ho gaya. Existing products preserve hain.");}}
+      if(source){ const parsed:unknown=JSON.parse(source); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)&&"products" in parsed){const data=parsed as {products:Product[];movements?:StockMovement[];sales?:Sale[];suppliers?:Supplier[];expenses?:Expense[]};if(Array.isArray(data.products))setProducts(data.products.map(normalizeProduct));if(Array.isArray(data.movements))setMovements(data.movements);if(Array.isArray(data.sales))setSales(data.sales);if(Array.isArray(data.suppliers))setSuppliers(data.suppliers);if(Array.isArray(data.expenses))setExpenses(data.expenses);}else if(Array.isArray(parsed)){setProducts((parsed as Product[]).map(normalizeProduct));setNotice("Purana inventory safely migrate ho gaya. Existing products preserve hain.");}}
     } catch {
       setNotice("Saved inventory could not be read. Demo data is shown.");
     } finally {
@@ -140,11 +143,11 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({version:4,products,movements,sales,suppliers}));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({version:4,products,movements,sales,suppliers,expenses}));
     } catch {
       setNotice("Device storage is full. Changes may not persist.");
     }
-  }, [products, movements, sales, suppliers, hydrated]);
+  }, [products, movements, sales, suppliers, expenses, hydrated]);
 
   useEffect(() => {
     if (!notice) return;
@@ -165,11 +168,16 @@ export default function Home() {
   const totalRevenue=sales.reduce((sum,sale)=>sum+sale.revenue,0);
   const totalCost=sales.reduce((sum,sale)=>sum+sale.cost,0);
   const totalProfit=sales.reduce((sum,sale)=>sum+sale.profit,0);
+  const totalExpenses=expenses.reduce((sum,expense)=>sum+expense.amount,0);
+  const netProfit=totalProfit-totalExpenses;
   const reportSales=useMemo(()=>sales.filter(sale=>sale.soldAt>=reportFrom&&sale.soldAt<=reportTo).sort((a,b)=>a.soldAt.localeCompare(b.soldAt)),[sales,reportFrom,reportTo]);
   const reportRevenue=reportSales.reduce((sum,sale)=>sum+sale.revenue,0);
   const reportCost=reportSales.reduce((sum,sale)=>sum+sale.cost,0);
   const reportProfit=reportSales.reduce((sum,sale)=>sum+sale.profit,0);
-  const reportRows=useMemo(()=>{const groups=new Map<string,{label:string;revenue:number;cost:number;profit:number;count:number}>();for(const sale of reportSales){const key=reportGrouping==="day"?sale.soldAt:sale.soldAt.slice(0,7);const row=groups.get(key)||{label:key,revenue:0,cost:0,profit:0,count:0};row.revenue+=sale.revenue;row.cost+=sale.cost;row.profit+=sale.profit;row.count+=1;groups.set(key,row);}return Array.from(groups.values()).sort((a,b)=>b.label.localeCompare(a.label));},[reportSales,reportGrouping]);
+  const reportExpenses=useMemo(()=>expenses.filter(expense=>expense.spentAt>=reportFrom&&expense.spentAt<=reportTo),[expenses,reportFrom,reportTo]);
+  const reportExpenseTotal=reportExpenses.reduce((sum,expense)=>sum+expense.amount,0);
+  const reportNetProfit=reportProfit-reportExpenseTotal;
+  const reportRows=useMemo(()=>{const groups=new Map<string,{label:string;revenue:number;cost:number;profit:number;expenses:number;netProfit:number;count:number}>();for(const sale of reportSales){const key=reportGrouping==="day"?sale.soldAt:sale.soldAt.slice(0,7);const row=groups.get(key)||{label:key,revenue:0,cost:0,profit:0,expenses:0,netProfit:0,count:0};row.revenue+=sale.revenue;row.cost+=sale.cost;row.profit+=sale.profit;row.count+=1;groups.set(key,row);}for(const expense of reportExpenses){const key=reportGrouping==="day"?expense.spentAt:expense.spentAt.slice(0,7);const row=groups.get(key)||{label:key,revenue:0,cost:0,profit:0,expenses:0,netProfit:0,count:0};row.expenses+=expense.amount;groups.set(key,row);}for(const row of groups.values())row.netProfit=row.profit-row.expenses;return Array.from(groups.values()).sort((x,y)=>y.label.localeCompare(x.label));},[reportSales,reportExpenses,reportGrouping]);
   const maxReportRevenue=Math.max(1,...reportRows.map(row=>row.revenue));
 
   function openAdd() {
@@ -324,10 +332,45 @@ export default function Home() {
     setNotice("Sale saved. Gross profit: "+formatMoney(sale.profit));
   }
 
+  function parseNaturalExpense(raw:string):{description:string;category:string;amount:number;spentAt:string}|null {
+    const q=raw.toLowerCase().replace(/,/g," ").replace(/\s+/g," ").trim();
+    if(!/\b(expense|spent|spend|paid|payment|diya|diye|di|kharcha|kharch|bhar diya|jama kiya)\b/.test(q))return null;
+    const amountMatch=q.match(/(?:₹\s*|rs\.?\s*|rupees?\s*)(\d+(?:\.\d+)?)/)||q.match(/(\d+(?:\.\d+)?)\s*(?:rupees?|rs\.?)/);
+    if(!amountMatch)return null;
+    const amount=Number(amountMatch[1]);
+    if(!Number.isFinite(amount)||amount<=0)return null;
+    let description=q.replace(amountMatch[0]," ").replace(/\b(aaj|today|kal|yesterday|expense|spent|spend|paid|payment|diya|diye|di|kharcha|kharch|bhar|jama|kiya|the|was|for)\b/g," ").replace(/\s+/g," ").trim();
+    description=description.replace(/^(ka|ke|ki|the)\s+/,"").replace(/\s+(ka|ke|ki)$/,"").trim();
+    if(!description)return null;
+    const category=/\b(bijli|electricity|power|water|paani|internet|wifi|gas|telephone|mobile recharge|utility|bill)\b/.test(description)?"Utilities"
+      :/\b(rent|kiraya|lease)\b/.test(description)?"Rent"
+      :/\b(salary|wages|mazdoori|staff)\b/.test(description)?"Staff"
+      :/\b(petrol|diesel|transport|delivery|fuel|travel)\b/.test(description)?"Transport"
+      :/\b(repair|maintenance|marammat)\b/.test(description)?"Repairs"
+      :/\b(packaging|packing|wrapper)\b/.test(description)?"Packaging":"Other";
+    const spentAt=/\b(kal|yesterday)\b/.test(q)?dateInDays(-1):today();
+    return {description,category,amount,spentAt};
+  }
+
+  function confirmAssistantExpense(){
+    if(!pendingExpenseAction)return;
+    const expense:Expense={id:makeId(),description:pendingExpenseAction.description,category:pendingExpenseAction.category,amount:pendingExpenseAction.amount,spentAt:pendingExpenseAction.spentAt,createdAt:new Date().toISOString()};
+    setExpenses(current=>[expense,...current].slice(0,2000));
+    setAssistantMessages(current=>[...current,{role:"assistant",text:"Expense confirmed and saved: "+expense.description+" · "+formatMoney(expense.amount)+" · "+expense.category+" · "+expense.spentAt+". Updated total expenses "+formatMoney(totalExpenses+expense.amount)+", net profit "+formatMoney(totalProfit-totalExpenses-expense.amount)+"."}].slice(-30));
+    setPendingExpenseAction(null);
+    setNotice("Expense saved: "+formatMoney(expense.amount));
+  }
+
   function processAssistantInput(raw:string){
+    const expenseAction=parseNaturalExpense(raw);
+    if(expenseAction){
+      setPendingStockAction(null);setPendingSaleAction(null);setPendingExpenseAction(expenseAction);
+      setAssistantMessages(current=>[...current,{role:"user",text:raw},{role:"assistant",text:"Expense confirmation required: "+expenseAction.description+" · "+formatMoney(expenseAction.amount)+" · "+expenseAction.category+" · Date "+expenseAction.spentAt+". Confirm karne par expense record hoga. Estimated net profit "+formatMoney(totalProfit-totalExpenses-expenseAction.amount)+"."}].slice(-30));
+      return;
+    }
     const saleAction=parseNaturalSale(raw);
     if(saleAction){
-      setPendingStockAction(null);
+      setPendingExpenseAction(null);setPendingStockAction(null);
       setPendingSaleAction({productId:saleAction.product.id,productName:saleAction.product.name,quantity:saleAction.quantity,unitPrice:saleAction.unitPrice});
       const revenue=saleAction.quantity*saleAction.unitPrice;
       const profit=revenue-saleAction.quantity*saleAction.product.costPrice;
@@ -336,7 +379,7 @@ export default function Home() {
     }
     const action=parseStockAction(raw);
     if(action){
-      setPendingSaleAction(null);
+      setPendingExpenseAction(null);setPendingSaleAction(null);
       setPendingStockAction({productId:action.product.id,productName:action.product.name,quantity:action.quantity,direction:action.direction});
       const verb=action.direction==="IN"?"add":"remove";
       setAssistantMessages(current=>[...current,{role:"user",text:raw},{role:"assistant",text:"Confirmation required: "+action.quantity+" "+action.product.unit+" "+action.product.name+" ke stock mein "+verb+" honge. Current stock "+action.product.quantity+" "+action.product.unit+". Confirm karne ke baad hi inventory change hogi."}].slice(-30));
@@ -371,10 +414,16 @@ export default function Home() {
       if(/\b(today|aaj)\b/.test(q))return "Aaj "+day.length+" sales record hui. Revenue "+formatMoney(revenue)+".";
       return "Saved sales ka total revenue "+formatMoney(totalRevenue)+", product cost "+formatMoney(totalCost)+" hai.";
     }
+    if(/\b(expense|expenses|kharcha|kharch|spending|bijli bill)\b/.test(q)){
+      const day=expenses.filter(x=>x.spentAt===today());const dayTotal=day.reduce((n,x)=>n+x.amount,0);
+      if(/\b(today|aaj)\b/.test(q))return "Aaj "+day.length+" expenses record hue. Total expense "+formatMoney(dayTotal)+". Net profit "+formatMoney(sales.filter(x=>x.soldAt===today()).reduce((n,x)=>n+x.profit,0)-dayTotal)+".";
+      return "Saved expenses "+formatMoney(totalExpenses)+". Gross profit "+formatMoney(totalProfit)+". Net profit "+formatMoney(netProfit)+".";
+    }
+    if(/\b(net profit|net munafa|net fayda)\b/.test(q))return "Net profit = gross profit − recorded expenses. Current net profit "+formatMoney(netProfit)+". Unrecorded costs, tax and fees excluded.";
     if(/\b(profit|munafa|faayda|fayda)\b/.test(q)){
-      const day=sales.filter(x=>x.soldAt===today());const profit=day.reduce((n,x)=>n+x.profit,0);
-      if(/\b(today|aaj)\b/.test(q))return "Aaj ka recorded gross profit "+formatMoney(profit)+" hai. Ye overheads, tax aur fees se pehle ka profit hai.";
-      return "Recorded gross profit "+formatMoney(totalProfit)+" hai. Ismein rent, wages, tax aur fees include nahi hain.";
+      const day=sales.filter(x=>x.soldAt===today());const profit=day.reduce((n,x)=>n+x.profit,0);const dayExpenses=expenses.filter(x=>x.spentAt===today()).reduce((n,x)=>n+x.amount,0);
+      if(/\b(today|aaj)\b/.test(q))return "Aaj gross profit "+formatMoney(profit)+", recorded expenses "+formatMoney(dayExpenses)+" aur net profit "+formatMoney(profit-dayExpenses)+" hai.";
+      return "Recorded gross profit "+formatMoney(totalProfit)+", expenses "+formatMoney(totalExpenses)+" aur net profit "+formatMoney(netProfit)+" hai.";
     }
     if(/\b(supplier|suppliers|vendor|distributor)\b/.test(q)){
       if(matched){const supplier=suppliers.find(x=>x.id===matched.supplierId);return supplier?matched.name+" ka preferred supplier "+supplier.name+" hai. Contact: "+(supplier.contact||"saved nahi hai")+".":matched.name+" ke saath abhi koi supplier linked nahi hai.";}
@@ -382,7 +431,7 @@ export default function Home() {
     }
     if(matched)return matched.name+": available stock "+matched.quantity+" "+matched.unit+", purchase price "+formatMoney(matched.costPrice)+", selling price "+formatMoney(matched.sellingPrice)+", status "+getStatus(matched)+".";
     if(/\b(stock|inventory|maal|samaan|item|product)\b/.test(q))return "Inventory mein "+products.length+" products hain. Total stock cost "+formatMoney(inventoryValue)+". Low-stock items "+low.length+". Kisi product ka naam poochhein for exact quantity.";
-    return "Main saved inventory, product stock, low-stock/reorder, suppliers, sales aur gross profit ke questions answer kar sakti hoon. Example: “How much Maggi stock?”, “Aaj ki sales”, “Low stock items” ya “Total profit”.";
+    return "Main saved inventory, stock, suppliers, sales, expenses aur net profit ke questions answer kar sakti hoon. Example: “Aaj ₹500 bijli bill diya”, “Aaj ka net profit”, “Aaj ki sales” ya “Low stock items”.";
   }
 
   function submitAssistantQuestion(event?:FormEvent<HTMLFormElement>){
@@ -398,7 +447,7 @@ export default function Home() {
     if(!Recognition){setNotice("Is browser mein voice recognition supported nahi. Text assistant use karein.");return;}
     if(isListening){stopSpeech?.();setIsListening(false);setStopSpeech(null);return;}
     const recognition=new Recognition();recognition.lang=assistantLanguage;recognition.interimResults=false;recognition.maxAlternatives=1;
-    recognition.onresult=(event)=>{const transcript=event.results[0]?.[0]?.transcript||"";if(transcript){setAssistantInput("");processAssistantInput(transcript);if("speechSynthesis" in window){const utterance=new SpeechSynthesisUtterance("Request received. Please check the screen and confirm before stock changes.");utterance.lang=assistantLanguage;window.speechSynthesis.speak(utterance);}}};
+    recognition.onresult=(event)=>{const transcript=event.results[0]?.[0]?.transcript||"";if(transcript){setAssistantInput("");processAssistantInput(transcript);if("speechSynthesis" in window){const utterance=new SpeechSynthesisUtterance("Request received. Please check the screen and confirm before any record is saved.");utterance.lang=assistantLanguage;window.speechSynthesis.speak(utterance);}}};
     recognition.onerror=()=>{setIsListening(false);setNotice("Voice capture nahi ho paya. Text se question pooch sakte hain.");};
     recognition.onend=()=>{setIsListening(false);setStopSpeech(null);};setStopSpeech(()=>()=>recognition.stop());setIsListening(true);recognition.start();
   }
@@ -474,6 +523,7 @@ export default function Home() {
                 <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Hindi + English shop assistant</h2><p className="mt-1 text-xs text-slate-400">Answers use this device's saved inventory and sales.</p></div><select value={assistantLanguage} onChange={e=>setAssistantLanguage(e.target.value as "hi-IN"|"en-IN")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"><option value="hi-IN">Hindi voice</option><option value="en-IN">English voice</option></select></div>
                 <div className="mt-5 max-h-[440px] min-h-[260px] space-y-3 overflow-y-auto rounded-xl bg-[#f8fbf8] p-3">{assistantMessages.map((message,index)=><div key={index} className={message.role==="user"?"ml-auto max-w-[88%] rounded-2xl rounded-br-sm bg-forest px-4 py-3 text-xs leading-5 text-white":"mr-auto max-w-[92%] rounded-2xl rounded-bl-sm border border-slate-100 bg-white px-4 py-3 text-xs leading-5 text-slate-700"}>{message.text}</div>)}</div>
                 <form onSubmit={submitAssistantQuestion} className="mt-4 flex gap-2"><input value={assistantInput} onChange={e=>setAssistantInput(e.target.value)} placeholder="Maggi stock kitna hai? / Today's profit?" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-forest"/><button type="submit" aria-label="Send question" className="rounded-xl bg-forest px-4 text-white"><Send size={17}/></button><button type="button" onClick={handleVoice} aria-label="Start voice input" className={isListening?"rounded-xl bg-amber-100 px-4 text-amber-800":"rounded-xl border border-slate-200 px-4 text-forest"}><Mic size={17}/></button></form>
+                {pendingExpenseAction ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-extrabold text-amber-900">Confirm expense</p><p className="mt-2 text-sm font-bold text-ink">{pendingExpenseAction.description}</p><p className="mt-1 text-xs text-slate-700">Amount: {formatMoney(pendingExpenseAction.amount)} · Category: {pendingExpenseAction.category} · Date: {pendingExpenseAction.spentAt}</p><p className="mt-1 text-xs text-slate-700">Net profit after expense: {formatMoney(totalProfit-totalExpenses-pendingExpenseAction.amount)}</p><div className="mt-3 flex gap-2"><button type="button" onClick={confirmAssistantExpense} className="rounded-lg bg-forest px-4 py-2 text-xs font-bold text-white">Confirm expense</button><button type="button" onClick={()=>{setPendingExpenseAction(null);setAssistantMessages(current=>[...current,{role:"assistant",text:"Expense cancelled. No expense record was saved."}].slice(-30));}} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700">Cancel</button></div></div>:null}
                 {pendingSaleAction ? <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-extrabold text-emerald-900">Confirm sale</p><p className="mt-2 text-sm font-bold text-ink">{pendingSaleAction.quantity} {products.find(p=>p.id===pendingSaleAction.productId)?.unit||"units"} — {pendingSaleAction.productName}</p><p className="mt-1 text-xs text-slate-700">Selling price: {formatMoney(pendingSaleAction.unitPrice)} each · Revenue: {formatMoney(pendingSaleAction.quantity*pendingSaleAction.unitPrice)}</p><p className="mt-1 text-xs text-slate-700">Product cost: {formatMoney(pendingSaleAction.quantity*(products.find(p=>p.id===pendingSaleAction.productId)?.costPrice||0))} · Gross profit: {formatMoney(pendingSaleAction.quantity*(pendingSaleAction.unitPrice-(products.find(p=>p.id===pendingSaleAction.productId)?.costPrice||0)))}</p><p className="mt-1 text-xs text-slate-600">Available: {products.find(p=>p.id===pendingSaleAction.productId)?.quantity??"Unavailable"} · After sale: {Math.max(0,(products.find(p=>p.id===pendingSaleAction.productId)?.quantity??0)-pendingSaleAction.quantity)}</p><div className="mt-3 flex gap-2"><button type="button" onClick={confirmAssistantSale} className="rounded-lg bg-forest px-4 py-2 text-xs font-bold text-white">Confirm sale</button><button type="button" onClick={()=>{setPendingSaleAction(null);setAssistantMessages(current=>[...current,{role:"assistant",text:"Sale cancelled. Stock aur sales record unchanged hain."}].slice(-30));}} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700">Cancel</button></div></div>:null}
                 {pendingStockAction ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-extrabold text-amber-900">Confirm inventory change</p><p className="mt-2 text-sm font-bold text-ink">{pendingStockAction.direction==="IN"?"Add":"Remove"} {pendingStockAction.quantity} {products.find(p=>p.id===pendingStockAction.productId)?.unit||"units"} — {pendingStockAction.productName}</p><p className="mt-1 text-xs text-slate-600">Current stock: {products.find(p=>p.id===pendingStockAction.productId)?.quantity??"Unavailable"} · After action: {((products.find(p=>p.id===pendingStockAction.productId)?.quantity??0)+(pendingStockAction.direction==="IN"?pendingStockAction.quantity:-pendingStockAction.quantity))}</p><div className="mt-3 flex gap-2"><button type="button" onClick={confirmStockAction} className="rounded-lg bg-forest px-4 py-2 text-xs font-bold text-white">Confirm change</button><button type="button" onClick={()=>{setPendingStockAction(null);setAssistantMessages(current=>[...current,{role:"assistant",text:"Cancelled. Inventory mein koi change nahi hua."}].slice(-30));}} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700">Cancel</button></div></div>:null}
                 <p className="mt-3 text-[10px] text-slate-400">{isListening?"Listening… Speak now.":"Voice needs browser support and microphone permission. Text mode always available."}</p>
@@ -512,11 +562,12 @@ export default function Home() {
             </div> : null}
 
             {activeNav==="Sales & profit" ? <div className="mt-7 space-y-6">
-              <div className="grid gap-4 sm:grid-cols-3"><MetricCard label="Total revenue" value={formatMoney(totalRevenue)} note={sales.length+" recorded sales"} icon={Wallet}/><MetricCard label="Cost of goods sold" value={formatMoney(totalCost)} note="Based on saved purchase cost" icon={Boxes}/><MetricCard label="Gross profit" value={formatMoney(totalProfit)} note="Revenue minus product cost" icon={TrendingUp} trend={totalProfit>=0?"up":"down"}/></div>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Total revenue" value={formatMoney(totalRevenue)} note={sales.length+" recorded sales"} icon={Wallet}/><MetricCard label="Cost of goods sold" value={formatMoney(totalCost)} note="Based on saved purchase cost" icon={Boxes}/><MetricCard label="Gross profit" value={formatMoney(totalProfit)} note="Revenue minus product cost" icon={TrendingUp} trend={totalProfit>=0?"up":"down"}/><MetricCard label="Net profit" value={formatMoney(netProfit)} note={formatMoney(totalExpenses)+" recorded expenses"} icon={TrendingUp} trend={netProfit>=0?"up":"down"}/></div>
               <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
                 <form onSubmit={recordSale} className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6"><h2 className="text-base font-extrabold text-ink">Record a sale</h2><p className="mt-1 text-xs text-slate-400">Sale save hote hi inventory FIFO ke hisaab se reduce hoga.</p><div className="mt-5 space-y-4"><div><label className="text-xs font-bold text-slate-600">Product</label><select required value={saleForm.productId} onChange={e=>{const p=products.find(x=>x.id===e.target.value);setSaleForm({...saleForm,productId:e.target.value,unitPrice:p?String(p.sellingPrice):''});}} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"><option value="">Select product</option>{products.filter(p=>p.quantity>0).map(p=><option key={p.id} value={p.id}>{p.name} · {p.quantity} {p.unit} available</option>)}</select></div><div><label className="text-xs font-bold text-slate-600">Quantity sold</label><input required type="number" min="0.01" step="any" value={saleForm.quantity} onChange={e=>setSaleForm({...saleForm,quantity:e.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/></div><div><label className="text-xs font-bold text-slate-600">Selling price per unit (₹)</label><input required type="number" min="0" step="0.01" value={saleForm.unitPrice} onChange={e=>setSaleForm({...saleForm,unitPrice:e.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/></div><div><label className="text-xs font-bold text-slate-600">Sale date</label><input type="date" value={saleForm.soldAt} onChange={e=>setSaleForm({...saleForm,soldAt:e.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/></div></div><div className="mt-5 rounded-xl bg-[#f2f8f3] p-4"><p className="text-xs text-slate-500">Estimated gross profit</p><p className="mt-1 text-xl font-extrabold text-forest">{formatMoney((Number(saleForm.quantity)||0)*((Number(saleForm.unitPrice)||0)-(products.find(p=>p.id===saleForm.productId)?.costPrice||0)))}</p></div><button type="submit" disabled={!products.some(p=>p.quantity>0)} className="mt-5 w-full rounded-xl bg-forest px-4 py-3 text-sm font-bold text-white disabled:opacity-40">Save sale & update stock</button></form>
                 <div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6"><h2 className="text-base font-extrabold text-ink">Sales history</h2><p className="mt-1 text-xs text-slate-400">Latest recorded transactions · maximum 1,000</p><div className="mt-4 max-h-[520px] space-y-3 overflow-y-auto">{sales.map(sale=><div key={sale.id} className="rounded-xl border border-slate-100 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold text-ink">{sale.productName}</p><p className="mt-1 text-[10px] text-slate-500">{sale.quantity} {sale.unit} × {formatMoney(sale.unitPrice)} · {sale.soldAt}</p></div><div className="text-right"><p className="text-sm font-extrabold text-ink">{formatMoney(sale.revenue)}</p><p className={`mt-1 text-[10px] font-bold ${sale.profit>=0?"text-emerald-700":"text-rose-600"}`}>Profit {formatMoney(sale.profit)}</p></div></div></div>)}{sales.length===0?<p className="py-10 text-center text-xs text-slate-400">Abhi koi sale record nahi hui.</p>:null}</div></div>
               </div>
+              <div className="mt-6 rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Expense history</h2><p className="mt-1 text-xs text-slate-400">Confirmed expenses · latest 2,000 records</p></div><span className="text-sm font-extrabold text-ink">{formatMoney(totalExpenses)}</span></div><div className="mt-4 max-h-72 space-y-3 overflow-y-auto">{expenses.map(expense=><div key={expense.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 p-3"><div><p className="text-sm font-bold text-ink">{expense.description}</p><p className="mt-1 text-[10px] text-slate-500">{expense.category} · {expense.spentAt}</p></div><span className="text-sm font-extrabold text-ink">{formatMoney(expense.amount)}</span></div>)}{expenses.length===0?<p className="py-8 text-center text-xs text-slate-400">Abhi koi expense record nahi hua.</p>:null}</div></div>
             </div> : null}
 
             {activeNav!=="Suppliers & reorder" ? <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -529,9 +580,9 @@ export default function Home() {
             {activeNav==="Overview" ? <div className="mt-6 rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Sales performance</h2><p className="mt-1 text-xs text-slate-400">Live analytics from your saved sales transactions</p></div><span className="rounded-full bg-[#eff8f1] px-3 py-1.5 text-[10px] font-bold text-forest">{reportSales.length} transactions</span></div>
               <div className="mt-5 flex flex-wrap items-end gap-3"><div><label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">From</label><input type="date" value={reportFrom} max={reportTo} onChange={e=>setReportFrom(e.target.value)} className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-xs"/></div><div><label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">To</label><input type="date" value={reportTo} min={reportFrom} max={today()} onChange={e=>setReportTo(e.target.value)} className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-xs"/></div><div className="flex gap-1 rounded-lg bg-slate-100 p-1"><button onClick={()=>setReportGrouping("day")} className={`rounded-md px-3 py-2 text-xs font-bold ${reportGrouping==="day"?"bg-white text-forest shadow-sm":"text-slate-500"}`}>Daily</button><button onClick={()=>setReportGrouping("month")} className={`rounded-md px-3 py-2 text-xs font-bold ${reportGrouping==="month"?"bg-white text-forest shadow-sm":"text-slate-500"}`}>Monthly</button></div><button onClick={()=>{setReportFrom(dateInDays(-29));setReportTo(today());}} className="rounded-lg px-3 py-2 text-xs font-bold text-forest hover:bg-[#f2f8f3]">Last 30 days</button></div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-[#f7faf7] p-4"><p className="text-[10px] font-semibold text-slate-500">Revenue</p><p className="mt-1 text-xl font-extrabold text-ink">{formatMoney(reportRevenue)}</p></div><div className="rounded-xl bg-[#f7faf7] p-4"><p className="text-[10px] font-semibold text-slate-500">Product cost</p><p className="mt-1 text-xl font-extrabold text-ink">{formatMoney(reportCost)}</p></div><div className="rounded-xl bg-[#f0f8f2] p-4"><p className="text-[10px] font-semibold text-forest">Gross profit</p><p className="mt-1 text-xl font-extrabold text-forest">{formatMoney(reportProfit)}</p></div></div>
-              <div className="mt-6"><div className="mb-3 flex items-center justify-between"><h3 className="text-xs font-extrabold text-ink">{reportGrouping==="day"?"Daily report":"Monthly report"}</h3><span className="text-[10px] text-slate-400">Revenue bars · newest first</span></div>{reportRows.length? <div className="space-y-3">{reportRows.map(row=><div key={row.label} className="grid grid-cols-[76px_1fr_90px] items-center gap-3"><span className="text-[10px] font-semibold text-slate-500">{row.label}</span><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-forest" style={{width:(row.revenue/maxReportRevenue*100)+"%"}}/></div><div className="text-right"><p className="text-[10px] font-bold text-ink">{formatMoney(row.revenue)}</p><p className="text-[9px] text-emerald-700">Profit {formatMoney(row.profit)}</p></div></div>)}</div>:<p className="rounded-xl bg-slate-50 py-8 text-center text-xs text-slate-400">Selected dates mein koi sale record nahi hai.</p>}</div>
-              <p className="mt-4 text-[10px] text-slate-400">Reports use sale date and saved cost snapshots. Gross profit excludes rent, wages, tax, payment fees and other overheads.</p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><div className="rounded-xl bg-[#f7faf7] p-4"><p className="text-[10px] font-semibold text-slate-500">Revenue</p><p className="mt-1 text-xl font-extrabold text-ink">{formatMoney(reportRevenue)}</p></div><div className="rounded-xl bg-[#f7faf7] p-4"><p className="text-[10px] font-semibold text-slate-500">Product cost</p><p className="mt-1 text-xl font-extrabold text-ink">{formatMoney(reportCost)}</p></div><div className="rounded-xl bg-[#f0f8f2] p-4"><p className="text-[10px] font-semibold text-forest">Gross profit</p><p className="mt-1 text-xl font-extrabold text-forest">{formatMoney(reportProfit)}</p></div><div className="rounded-xl bg-[#fff8ed] p-4"><p className="text-[10px] font-semibold text-slate-500">Expenses</p><p className="mt-1 text-xl font-extrabold text-ink">{formatMoney(reportExpenseTotal)}</p></div><div className="rounded-xl bg-[#f0f8f2] p-4"><p className="text-[10px] font-semibold text-forest">Net profit</p><p className="mt-1 text-xl font-extrabold text-forest">{formatMoney(reportNetProfit)}</p></div></div>
+              <div className="mt-6"><div className="mb-3 flex items-center justify-between"><h3 className="text-xs font-extrabold text-ink">{reportGrouping==="day"?"Daily report":"Monthly report"}</h3><span className="text-[10px] text-slate-400">Revenue bars · newest first</span></div>{reportRows.length? <div className="space-y-3">{reportRows.map(row=><div key={row.label} className="grid grid-cols-[76px_1fr_90px] items-center gap-3"><span className="text-[10px] font-semibold text-slate-500">{row.label}</span><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-forest" style={{width:(row.revenue/maxReportRevenue*100)+"%"}}/></div><div className="text-right"><p className="text-[10px] font-bold text-ink">{formatMoney(row.revenue)}</p><p className="text-[9px] text-emerald-700">Gross {formatMoney(row.profit)}</p><p className="text-[9px] text-amber-700">Expense {formatMoney(row.expenses)}</p><p className="text-[9px] font-bold text-forest">Net {formatMoney(row.netProfit)}</p></div></div>)}</div>:<p className="rounded-xl bg-slate-50 py-8 text-center text-xs text-slate-400">Selected dates mein koi sale record nahi hai.</p>}</div>
+              <p className="mt-4 text-[10px] text-slate-400">Reports group sales and expenses by their recorded dates. Net profit = gross product profit − recorded expenses; unrecorded costs, tax and fees are not included.</p>
             </div> : null}
 
             {activeNav!=="Suppliers & reorder" ? <div className="mt-6 grid gap-5 xl:grid-cols-[1.55fr_1fr]">
