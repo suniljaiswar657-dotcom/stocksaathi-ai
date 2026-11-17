@@ -980,7 +980,7 @@ export default function Home() {
                 </div>
                 <p className="mt-5 text-[10px] text-white/50">Suggestions are rule-based; AI assistant is not connected yet.</p>
               </div>
-            </div>
+            </div> : null}
 
             <div className="mt-6 rounded-2xl border border-[#e8eee8] bg-white shadow-soft">
               <div className="flex flex-col justify-between gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:px-6">
