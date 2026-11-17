@@ -98,6 +98,22 @@ test("React state is updated only after successful persistence verification", ()
   assert.ok(verify !== -1 && state > verify);
 });
 
-test("README remains outside the regression change scope", () => {
-  assert.ok(true);
+test("missing collections and unsupported backup/schema versions are rejected", () => {
+  assert.match(validator, /value\.backupVersion!==1/);
+  assert.match(validator, /d\.version!==4/);
+  assert.match(validator, /!Array\.isArray\(d\.products\)/);
+  assert.match(validator, /!Array\.isArray\(d\.reconciliationAudit\)/);
+});
+
+test("storage read failure cancels restore before any write", () => {
+  const readFailure = restore.slice(restore.indexOf("let previous:string|null;"), restore.indexOf("try{previous=window.localStorage.getItem(STORAGE_KEY);"));
+  assert.match(restore, /Current browser storage read nahi ho saka/);
+  assert.match(restore, /catch\{setNotice\("Current browser storage read nahi ho saka/);
+  assert.match(restore, /catch\{setNotice\("Current browser storage read nahi ho saka[\s\S]*?return;/);
+});
+
+test("legacy and current backup integrity paths are explicitly differentiated", () => {
+  assert.match(restore, /pendingRestore\.integrity\?/);
+  assert.match(restore, /No SHA-256 checksum was present/);
+  assert.match(page, /crypto\.subtle\.digest\("SHA-256"/);
 });
