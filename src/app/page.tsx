@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
-  Activity, ArrowDownRight, ArrowUpRight, Bell, Boxes, Building2, CalendarClock,
+  Activity, ArrowDownRight, ArrowUpRight, Bell, Boxes, CalendarClock,
   Check, ChevronDown, CircleHelp, Command, LayoutDashboard,
   Menu, Mic, PackagePlus, Pencil, Plus, Search, Settings2, ShoppingCart,
   Sparkles, TrendingUp, Truck, Wallet, X,
