@@ -401,7 +401,7 @@ export default function Home() {
 
   function downloadProfitLossCsv(){
     if(reportFrom>reportTo){setNotice("Report ki start date end date se pehle honi chahiye.");return;}
-    const escapeCsv=(value:string|number)=>{let text=String(value);if(/^[=+@-]/.test(text)||text.startsWith("\\t")||text.startsWith("\\r"))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
+    const escapeCsv=(value:string|number)=>{let text=String(value);if(/^[=+@]/.test(text)||(/^-(?!\d+(?:\.\d+)?$)/.test(text))||(/^-(?!\d+(?:\.\d+)?$)/.test(text))||text.startsWith("\t")||text.startsWith("\r"))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
     const rows:string[][]=[["Record type","Date / period","Description / category","Quantity","Unit","Revenue (INR)","Product cost (INR)","Gross profit (INR)","Expenses (INR)","Net profit (INR)"]];
     for(const sale of reportSales)rows.push(["Sale",sale.soldAt,sale.productName,String(sale.quantity),sale.unit,String(sale.revenue),String(sale.cost),String(sale.profit),"",""]);
     for(const expense of reportExpenses)rows.push(["Expense",expense.spentAt,expense.description+" / "+expense.category,"","","","","",String(expense.amount),""]);
@@ -409,7 +409,7 @@ export default function Home() {
     rows.push(["P&L "+(reportGrouping==="day"?"daily":"monthly")+" total","Period","Description","Quantity","Unit","Revenue (INR)","Product cost (INR)","Gross profit (INR)","Expenses (INR)","Net profit (INR)"]);
     for(const row of reportRows)rows.push(["P&L total",row.label,"","","",String(row.revenue),String(row.cost),String(row.profit),String(row.expenses),String(row.netProfit)]);
     rows.push(["GRAND TOTAL",reportFrom+" to "+reportTo,"","","",String(reportRevenue),String(reportCost),String(reportProfit),String(reportExpenseTotal),String(reportNetProfit)]);
-    const csv="\\uFEFF"+rows.map(row=>row.map(escapeCsv).join(",")).join("\\r\\n");
+    const csv="\uFEFF"+rows.map(row=>row.map(escapeCsv).join(",")).join("\r\n");
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
     const url=URL.createObjectURL(blob);
     const link=document.createElement("a");link.href=url;link.download="stocksaathi-profit-loss-"+reportFrom+"-to-"+reportTo+".csv";document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
