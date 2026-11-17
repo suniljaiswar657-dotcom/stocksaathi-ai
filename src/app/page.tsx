@@ -382,7 +382,7 @@ export default function Home() {
 
   function downloadExpenseCsv(){
     if(expenseReportFrom>expenseReportTo){setNotice("Report ki start date end date se pehle honi chahiye.");return;}
-    const escapeCsv=(value:string|number)=>{let text=String(value);if(/^[=+@\\-\\t\\r]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
+    const escapeCsv=(value:string|number)=>{let text=String(value);if(/^[=+@-]/.test(text)||text.startsWith("\t")||text.startsWith("\r"))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
     const rows:string[][]=[["Record type","Date","Description","Category","Amount (INR)"]];
     for(const expense of expenseReportItems)rows.push(["Expense",expense.spentAt,expense.description,expense.category,String(expense.amount)]);
     rows.push(["","","","",""]);
@@ -392,7 +392,7 @@ export default function Home() {
     rows.push(["Category total","","","Category","Amount (INR)"]);
     for(const item of expenseReportCategories)rows.push(["Category total","","",item.category,String(item.amount)]);
     rows.push(["Grand total","","","",String(expenseReportTotal)]);
-    const csv="\\uFEFF"+rows.map(row=>row.map(escapeCsv).join(",")).join("\\r\\n");
+    const csv="\uFEFF"+rows.map(row=>row.map(escapeCsv).join(",")).join("\r\n");
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
     const url=URL.createObjectURL(blob);
     const link=document.createElement("a");link.href=url;link.download="stocksaathi-expense-report-"+expenseReportFrom+"-to-"+expenseReportTo+".csv";document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
