@@ -14,20 +14,45 @@ type Sale = { id:string; productId:string; productName:string; quantity:number; 
 type Supplier = { id:string; name:string; contact:string; notes:string; createdAt:string };
 type Expense = { id:string; description:string; category:string; amount:number; spentAt:string; createdAt:string };
 type ReconciliationAuditEntry = { id:string; actor:string; action:string; issueType:string; recordId:string; summary:string; at:string };
-type StockSaathiBackup = { app:"STOCKSAATHI_AI"; backupVersion:1; exportedAt:string; data:{version:4;products:Product[];movements:StockMovement[];sales:Sale[];suppliers:Supplier[];expenses:Expense[];monthlyExpenseBudget:number;reconciliationAudit:ReconciliationAuditEntry[]} };
+type StockSaathiBackupData = {version:4;products:Product[];movements:StockMovement[];sales:Sale[];suppliers:Supplier[];expenses:Expense[];monthlyExpenseBudget:number;reconciliationAudit:ReconciliationAuditEntry[]};
+type StockSaathiBackup = { app:"STOCKSAATHI_AI"; backupVersion:1; exportedAt:string; integrity:{algorithm:"SHA-256";digest:string}; data:StockSaathiBackupData };
+async function backupDigest(data:StockSaathiBackupData){const bytes=new TextEncoder().encode(JSON.stringify(data));const hash=await crypto.subtle.digest("SHA-256",bytes);return Array.from(new Uint8Array(hash)).map(byte=>byte.toString(16).padStart(2,"0")).join("");}
 function isRecord(value:unknown):value is Record<string,unknown>{return !!value&&typeof value==="object"&&!Array.isArray(value);}
-function isStockSaathiBackup(value:unknown):value is StockSaathiBackup{
-  if(!isRecord(value)||value.app!=="STOCKSAATHI_AI"||value.backupVersion!==1||typeof value.exportedAt!=="string"||!isRecord(value.data))return false;
+async function validateStockSaathiBackup(value:unknown):Promise<{ok:true;backup:StockSaathiBackup}|{ok:false;reason:string}>{
+  if(!isRecord(value)||value.app!=="STOCKSAATHI_AI")return {ok:false,reason:"Backup format ya app identity match nahi hui."};
+  if(value.backupVersion!==1)return {ok:false,reason:"Backup version supported nahi hai."};
+  if(typeof value.exportedAt!=="string"||!Number.isFinite(Date.parse(value.exportedAt)))return {ok:false,reason:"Backup timestamp invalid hai."};
+  if(!isRecord(value.integrity)||value.integrity.algorithm!=="SHA-256"||typeof value.integrity.digest!=="string"||!/^[a-f0-9]{64}$/.test(value.integrity.digest))return {ok:false,reason:"Integrity checksum missing ya invalid hai."};
+  if(!isRecord(value.data))return {ok:false,reason:"Backup data missing hai."};
   const d=value.data;
-  if(d.version!==4||!Array.isArray(d.products)||!Array.isArray(d.movements)||!Array.isArray(d.sales)||!Array.isArray(d.suppliers)||!Array.isArray(d.expenses)||!Array.isArray(d.reconciliationAudit)||typeof d.monthlyExpenseBudget!=="number"||!Number.isFinite(d.monthlyExpenseBudget)||d.monthlyExpenseBudget<0)return false;
+  if(d.version!==4)return {ok:false,reason:"Data schema version supported nahi hai."};
+  if(!Array.isArray(d.products)||!Array.isArray(d.movements)||!Array.isArray(d.sales)||!Array.isArray(d.suppliers)||!Array.isArray(d.expenses)||!Array.isArray(d.reconciliationAudit)||typeof d.monthlyExpenseBudget!=="number"||!Number.isFinite(d.monthlyExpenseBudget)||d.monthlyExpenseBudget<0)return {ok:false,reason:"Required data sections missing ya invalid hain."};
   const strings=(v:unknown,keys:string[])=>isRecord(v)&&keys.every(k=>typeof v[k]==="string");
   const numbers=(v:unknown,keys:string[])=>isRecord(v)&&keys.every(k=>typeof v[k]==="number"&&Number.isFinite(v[k]));
-  return d.products.every(v=>strings(v,["id","name","category","unit","expiryDate"])&&numbers(v,["quantity","costPrice","sellingPrice","lowStockAt"])&&Array.isArray(v.batches)&&v.batches.every(b=>strings(b,["id","batchNo","expiryDate","receivedAt"])&&numbers(b,["quantity"])))
-    &&d.movements.every(v=>strings(v,["id","productId","productName","type","note","at"])&&numbers(v,["quantity"])&&["IN","OUT","ADJUSTMENT"].includes(String((v as Record<string,unknown>).type)))
-    &&d.sales.every(v=>strings(v,["id","productId","productName","unit","soldAt"])&&numbers(v,["quantity","unitPrice","unitCost","revenue","cost","profit"])&&(v as Record<string,number>).quantity>0&&(v as Record<string,number>).unitPrice>=0&&(v as Record<string,number>).unitCost>=0)
-    &&d.suppliers.every(v=>strings(v,["id","name","contact","notes","createdAt"]))
-    &&d.expenses.every(v=>strings(v,["id","description","category","spentAt","createdAt"])&&numbers(v,["amount"])&&(v as Record<string,number>).amount>0)
-    &&d.reconciliationAudit.every(v=>strings(v,["id","actor","action","issueType","recordId","summary","at"]));
+  const idsUnique=(items:unknown[])=>{const ids=items.map(item=>isRecord(item)?item.id:null);return ids.every(id=>typeof id==="string"&&id.trim().length>0)&&new Set(ids).size===ids.length;};
+  const validDate=(value:string)=>value===""||Number.isFinite(Date.parse(value));
+  if(!idsUnique(d.products)||!idsUnique(d.movements)||!idsUnique(d.sales)||!idsUnique(d.suppliers)||!idsUnique(d.expenses)||!idsUnique(d.reconciliationAudit))return {ok:false,reason:"Duplicate ya missing record IDs mile."};
+  const batchIds:string[]=[];
+  for(const product of d.products){
+    if(!strings(product,["id","name","category","unit","expiryDate"])||!numbers(product,["quantity","costPrice","sellingPrice","lowStockAt"])||!Array.isArray(product.batches)||!product.name.trim()||product.quantity<0||product.costPrice<0||product.sellingPrice<0||product.lowStockAt<0||!validDate(product.expiryDate))return {ok:false,reason:"Product ya inventory fields invalid hain."};
+    let batchTotal=0;
+    for(const batch of product.batches){
+      if(!strings(batch,["id","batchNo","expiryDate","receivedAt"])||!numbers(batch,["quantity"])||!batch.id.trim()||batch.quantity<0||!validDate(batch.expiryDate)||!Number.isFinite(Date.parse(batch.receivedAt)))return {ok:false,reason:"Batch record invalid hai."};
+      batchIds.push(batch.id);batchTotal+=batch.quantity;
+    }
+    if(Math.abs(batchTotal-product.quantity)>0.000001)return {ok:false,reason:"Product quantity aur batch total match nahi karte."};
+    if(product.supplierId!==undefined&&typeof product.supplierId!=="string")return {ok:false,reason:"Product supplier link invalid hai."};
+    if(product.reorderToLevel!==undefined&&(typeof product.reorderToLevel!=="number"||!Number.isFinite(product.reorderToLevel)||product.reorderToLevel<0))return {ok:false,reason:"Product reorder target invalid hai."};
+  }
+  if(new Set(batchIds).size!==batchIds.length)return {ok:false,reason:"Duplicate batch IDs mile."};
+  if(!d.movements.every(v=>strings(v,["id","productId","productName","type","note","at"])&&numbers(v,["quantity"])&&["IN","OUT","ADJUSTMENT"].includes(String((v as Record<string,unknown>).type))&&Number.isFinite(Date.parse((v as Record<string,string>).at))&&(v as Record<string,number>).quantity>=0))return {ok:false,reason:"Stock movement record invalid hai."};
+  if(!d.sales.every(v=>strings(v,["id","productId","productName","unit","soldAt"])&&numbers(v,["quantity","unitPrice","unitCost","revenue","cost","profit"])&&Number.isFinite(Date.parse((v as Record<string,string>).soldAt))&&(v as Record<string,number>).quantity>0&&(v as Record<string,number>).unitPrice>=0&&(v as Record<string,number>).unitCost>=0&&Math.abs((v as Record<string,number>).revenue-(v as Record<string,number>).quantity*(v as Record<string,number>).unitPrice)<0.01&&Math.abs((v as Record<string,number>).cost-(v as Record<string,number>).quantity*(v as Record<string,number>).unitCost)<0.01&&Math.abs((v as Record<string,number>).profit-((v as Record<string,number>).revenue-(v as Record<string,number>).cost))<0.01))return {ok:false,reason:"Sales record ya financial totals invalid hain."};
+  if(!d.suppliers.every(v=>strings(v,["id","name","contact","notes","createdAt"])&&!!(v as Record<string,string>).name.trim()&&Number.isFinite(Date.parse((v as Record<string,string>).createdAt))))return {ok:false,reason:"Supplier record invalid hai."};
+  if(!d.expenses.every(v=>strings(v,["id","description","category","spentAt","createdAt"])&&numbers(v,["amount"])&&(v as Record<string,number>).amount>0&&Number.isFinite(Date.parse((v as Record<string,string>).spentAt))&&Number.isFinite(Date.parse((v as Record<string,string>).createdAt))))return {ok:false,reason:"Expense record invalid hai."};
+  if(!d.reconciliationAudit.every(v=>strings(v,["id","actor","action","issueType","recordId","summary","at"])&&Number.isFinite(Date.parse((v as Record<string,string>).at))))return {ok:false,reason:"Audit event invalid hai."};
+  try{const expected=await backupDigest(d as StockSaathiBackupData);if(expected!==value.integrity.digest)return {ok:false,reason:"SHA-256 integrity check failed. File damaged ya modified ho sakti hai."};}
+  catch{return {ok:false,reason:"Is browser mein SHA-256 verification available nahi hai."};}
+  return {ok:true,backup:value as unknown as StockSaathiBackup};
 }
 type Product = {
   id: string;
