@@ -14,6 +14,21 @@ type Sale = { id:string; productId:string; productName:string; quantity:number; 
 type Supplier = { id:string; name:string; contact:string; notes:string; createdAt:string };
 type Expense = { id:string; description:string; category:string; amount:number; spentAt:string; createdAt:string };
 type ReconciliationAuditEntry = { id:string; actor:string; action:string; issueType:string; recordId:string; summary:string; at:string };
+type StockSaathiBackup = { app:"STOCKSAATHI_AI"; backupVersion:1; exportedAt:string; data:{version:4;products:Product[];movements:StockMovement[];sales:Sale[];suppliers:Supplier[];expenses:Expense[];monthlyExpenseBudget:number;reconciliationAudit:ReconciliationAuditEntry[]} };
+function isRecord(value:unknown):value is Record<string,unknown>{return !!value&&typeof value==="object"&&!Array.isArray(value);}
+function isStockSaathiBackup(value:unknown):value is StockSaathiBackup{
+  if(!isRecord(value)||value.app!=="STOCKSAATHI_AI"||value.backupVersion!==1||typeof value.exportedAt!=="string"||!isRecord(value.data))return false;
+  const d=value.data;
+  if(d.version!==4||!Array.isArray(d.products)||!Array.isArray(d.movements)||!Array.isArray(d.sales)||!Array.isArray(d.suppliers)||!Array.isArray(d.expenses)||!Array.isArray(d.reconciliationAudit)||typeof d.monthlyExpenseBudget!=="number"||!Number.isFinite(d.monthlyExpenseBudget)||d.monthlyExpenseBudget<0)return false;
+  const strings=(v:unknown,keys:string[])=>isRecord(v)&&keys.every(k=>typeof v[k]==="string");
+  const numbers=(v:unknown,keys:string[])=>isRecord(v)&&keys.every(k=>typeof v[k]==="number"&&Number.isFinite(v[k]));
+  return d.products.every(v=>strings(v,["id","name","category","unit","expiryDate"])&&numbers(v,["quantity","costPrice","sellingPrice","lowStockAt"])&&Array.isArray(v.batches)&&v.batches.every(b=>strings(b,["id","batchNo","expiryDate","receivedAt"])&&numbers(b,["quantity"])))
+    &&d.movements.every(v=>strings(v,["id","productId","productName","type","note","at"])&&numbers(v,["quantity"]))
+    &&d.sales.every(v=>strings(v,["id","productId","productName","unit","soldAt"])&&numbers(v,["quantity","unitPrice","unitCost","revenue","cost","profit"]))
+    &&d.suppliers.every(v=>strings(v,["id","name","contact","notes","createdAt"]))
+    &&d.expenses.every(v=>strings(v,["id","description","category","spentAt","createdAt"])&&numbers(v,["amount"]))
+    &&d.reconciliationAudit.every(v=>strings(v,["id","actor","action","issueType","recordId","summary","at"]));
+}
 type Product = {
   id: string;
   name: string;
@@ -141,6 +156,8 @@ export default function Home() {
   const [reconciliationAudit,setReconciliationAudit]=useState<ReconciliationAuditEntry[]>([]);
   const [auditFrom,setAuditFrom]=useState(dateInDays(-29));
   const [auditTo,setAuditTo]=useState(today());
+  const [pendingRestore,setPendingRestore]=useState<StockSaathiBackup|null>(null);
+  const [restoreFileName,setRestoreFileName]=useState("");
 
   useEffect(() => {
     try {
