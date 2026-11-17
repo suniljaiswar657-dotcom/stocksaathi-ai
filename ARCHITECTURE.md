@@ -27,7 +27,8 @@ A simple Hindi-first shop assistant for Indian small businesses. It helps shop o
 - Natural-language expense requests accept an explicit amount and description (for example, “Aaj ₹500 bijli bill diya”). A confirmation preview shows date, category and amount; only confirmation saves the expense. Cancellation makes no change.
 - Sales history stores up to 1,000 transactions with revenue, cost-of-goods-sold and gross profit snapshots.
 - Sales summary reports total revenue, cost of goods sold and gross profit from recorded transactions.
-- Expense records store description, locally classified category, amount, expense date and creation timestamp. Expenses are persisted alongside inventory, sales and suppliers in the existing localStorage record; older records without an expenses array load as an empty expense list.
+- Expense records store description, locally classified category, amount, expense date and creation timestamp. Categories include utilities, rent, staff, transport, repairs, packaging, marketing, bank charges, supplies, food and refreshments, and other. Expenses are persisted alongside inventory, sales and suppliers in the existing localStorage record; older records without an expenses array load as an empty expense list.
+- A configurable monthly expense budget is persisted in the same localStorage record. The dashboard calculates current-month usage, warns at 80%, flags overspend at 100%, and displays category-wise spending analysis. A zero budget disables budget alerts.
 - Net profit = gross product profit − recorded expenses. Date-filtered daily/monthly reports aggregate revenue, product cost, gross profit, expenses and net profit. This is an operating estimate, not statutory accounting; unrecorded costs, taxes and fees are excluded.
 - Overview dashboard reads saved sales and provides selectable date-range totals plus daily or monthly revenue / gross-profit breakdowns.
 - Supplier directory stores supplier name, optional contact and notes; products can be linked to a preferred supplier.
@@ -53,6 +54,7 @@ Inventory, movement history, sales, expenses and supplier records are stored in 
 ## Current limitations
 
 - Reports are local to the browser profile and are not consolidated across devices or multiple shop users.
+- Expense categories are inferred from descriptions using local keyword rules; classification is a convenience and may need human review. Monthly budget alerts are in-app dashboard warnings, not push notifications.
 - Hindi/English text assistant answers from saved inventory, supplier and sales data using local rule-based matching.
 - Natural-language stock IN/OUT requests are parsed against exact saved product names and quantities; proposed changes remain pending until the user explicitly confirms. Confirmed changes reuse the stock adjustment and movement ledger logic; cancellation makes no inventory change. Browser Web Speech API provides optional speech input and speech playback where supported; microphone permission is required. No external AI model API is connected.
 - Supplier details and reorder planning are local only; no external supplier integration, purchase-order sending, barcode scanning or notifications.
