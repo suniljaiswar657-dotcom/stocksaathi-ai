@@ -15,14 +15,15 @@ type Supplier = { id:string; name:string; contact:string; notes:string; createdA
 type Expense = { id:string; description:string; category:string; amount:number; spentAt:string; createdAt:string };
 type ReconciliationAuditEntry = { id:string; actor:string; action:string; issueType:string; recordId:string; summary:string; at:string };
 type StockSaathiBackupData = {version:4;products:Product[];movements:StockMovement[];sales:Sale[];suppliers:Supplier[];expenses:Expense[];monthlyExpenseBudget:number;reconciliationAudit:ReconciliationAuditEntry[]};
-type StockSaathiBackup = { app:"STOCKSAATHI_AI"; backupVersion:1; exportedAt:string; integrity:{algorithm:"SHA-256";digest:string}; data:StockSaathiBackupData };
+type StockSaathiBackup = { app:"STOCKSAATHI_AI"; backupVersion:1; exportedAt:string; integrity?:{algorithm:"SHA-256";digest:string}; data:StockSaathiBackupData };
 async function backupDigest(data:StockSaathiBackupData){const bytes=new TextEncoder().encode(JSON.stringify(data));const hash=await crypto.subtle.digest("SHA-256",bytes);return Array.from(new Uint8Array(hash)).map(byte=>byte.toString(16).padStart(2,"0")).join("");}
 function isRecord(value:unknown):value is Record<string,unknown>{return !!value&&typeof value==="object"&&!Array.isArray(value);}
 async function validateStockSaathiBackup(value:unknown):Promise<{ok:true;backup:StockSaathiBackup}|{ok:false;reason:string}>{
   if(!isRecord(value)||value.app!=="STOCKSAATHI_AI")return {ok:false,reason:"Backup format ya app identity match nahi hui."};
   if(value.backupVersion!==1)return {ok:false,reason:"Backup version supported nahi hai."};
   if(typeof value.exportedAt!=="string"||!Number.isFinite(Date.parse(value.exportedAt)))return {ok:false,reason:"Backup timestamp invalid hai."};
-  if(!isRecord(value.integrity)||value.integrity.algorithm!=="SHA-256"||typeof value.integrity.digest!=="string"||!/^[a-f0-9]{64}$/.test(value.integrity.digest))return {ok:false,reason:"Integrity checksum missing ya invalid hai."};
+  const hasIntegrity=value.integrity!==undefined;
+  if(hasIntegrity&&(!isRecord(value.integrity)||value.integrity.algorithm!=="SHA-256"||typeof value.integrity.digest!=="string"||!/^[a-f0-9]{64}$/.test(value.integrity.digest)))return {ok:false,reason:"Integrity checksum invalid hai."};
   if(!isRecord(value.data))return {ok:false,reason:"Backup data missing hai."};
   const d=value.data;
   if(d.version!==4)return {ok:false,reason:"Data schema version supported nahi hai."};
@@ -50,8 +51,8 @@ async function validateStockSaathiBackup(value:unknown):Promise<{ok:true;backup:
   if(!d.suppliers.every(v=>strings(v,["id","name","contact","notes","createdAt"])&&!!(v as Record<string,string>).name.trim()&&Number.isFinite(Date.parse((v as Record<string,string>).createdAt))))return {ok:false,reason:"Supplier record invalid hai."};
   if(!d.expenses.every(v=>strings(v,["id","description","category","spentAt","createdAt"])&&numbers(v,["amount"])&&(v as Record<string,number>).amount>0&&Number.isFinite(Date.parse((v as Record<string,string>).spentAt))&&Number.isFinite(Date.parse((v as Record<string,string>).createdAt))))return {ok:false,reason:"Expense record invalid hai."};
   if(!d.reconciliationAudit.every(v=>strings(v,["id","actor","action","issueType","recordId","summary","at"])&&Number.isFinite(Date.parse((v as Record<string,string>).at))))return {ok:false,reason:"Audit event invalid hai."};
-  try{const expected=await backupDigest(d as StockSaathiBackupData);if(expected!==value.integrity.digest)return {ok:false,reason:"SHA-256 integrity check failed. File damaged ya modified ho sakti hai."};}
-  catch{return {ok:false,reason:"Is browser mein SHA-256 verification available nahi hai."};}
+  if(hasIntegrity){try{const expected=await backupDigest(d as StockSaathiBackupData);if(expected!==(value.integrity as {digest:string}).digest)return {ok:false,reason:"SHA-256 integrity check failed. File damaged ya modified ho sakti hai."};}
+  catch{return {ok:false,reason:"Is browser mein SHA-256 verification available nahi hai."};}}
   return {ok:true,backup:value as unknown as StockSaathiBackup};
 }
 type Product = {
@@ -156,6 +157,7 @@ export default function Home() {
   const [batchProductId,setBatchProductId]=useState<string|null>(null);
   const [batchForm,setBatchForm]=useState({batchNo:'',quantity:'1',expiryDate:''});
   const [hydrated, setHydrated] = useState(false);
+  const [storageRecoveryMessage,setStorageRecoveryMessage]=useState("");
   const [activeNav, setActiveNav] = useState("Overview");
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -186,23 +188,66 @@ export default function Home() {
 
   useEffect(() => {
     try {
-      const saved=window.localStorage.getItem(STORAGE_KEY); const previous=window.localStorage.getItem(PREVIOUS_STORAGE_KEY); const older=window.localStorage.getItem(OLDER_STORAGE_KEY); const legacy=window.localStorage.getItem(LEGACY_STORAGE_KEY); const source=saved||previous||older||legacy;
-      if(source){ const parsed:unknown=JSON.parse(source); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)&&"products" in parsed){const data=parsed as {products:Product[];movements?:StockMovement[];sales?:Sale[];suppliers?:Supplier[];expenses?:Expense[];monthlyExpenseBudget?:number;reconciliationAudit?:ReconciliationAuditEntry[]};if(Array.isArray(data.products))setProducts(data.products);if(Array.isArray(data.movements))setMovements(data.movements);if(Array.isArray(data.sales))setSales(data.sales);if(Array.isArray(data.suppliers))setSuppliers(data.suppliers);if(Array.isArray(data.expenses))setExpenses(data.expenses);if(Array.isArray(data.reconciliationAudit))setReconciliationAudit(data.reconciliationAudit.slice(0,500));if(typeof data.monthlyExpenseBudget==="number"&&Number.isFinite(data.monthlyExpenseBudget)&&data.monthlyExpenseBudget>=0){setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));}}else if(Array.isArray(parsed)){setProducts((parsed as Product[]).map(normalizeProduct));setNotice("Purana inventory safely migrate ho gaya. Existing products preserve hain.");}}
-    } catch {
-      setNotice("Saved inventory could not be read. Demo data is shown.");
-    } finally {
+      const candidates=[STORAGE_KEY,PREVIOUS_STORAGE_KEY,OLDER_STORAGE_KEY,LEGACY_STORAGE_KEY];
+      const stored=candidates.map(key=>({key,raw:window.localStorage.getItem(key)}));
+      const anyStored=stored.some(item=>item.raw!==null);
+      let primaryInvalid=false;
+      let recovered=false;
+      for(const item of stored){
+        if(item.raw===null)continue;
+        try{
+          const parsed:unknown=JSON.parse(item.raw);
+          if(Array.isArray(parsed)){
+            setProducts((parsed as Product[]).map(normalizeProduct));
+            recovered=true;
+          }else if(isRecord(parsed)&&Array.isArray(parsed.products)&&
+            ["movements","sales","suppliers","expenses","reconciliationAudit"].every(key=>parsed[key]===undefined||Array.isArray(parsed[key]))&&
+            (parsed.monthlyExpenseBudget===undefined||(typeof parsed.monthlyExpenseBudget==="number"&&Number.isFinite(parsed.monthlyExpenseBudget)&&parsed.monthlyExpenseBudget>=0))){
+            const data=parsed as {products:Product[];movements?:StockMovement[];sales?:Sale[];suppliers?:Supplier[];expenses?:Expense[];monthlyExpenseBudget?:number;reconciliationAudit?:ReconciliationAuditEntry[]};
+            setProducts(data.products.map(product=>Array.isArray(product.batches)?product:normalizeProduct(product)));
+            if(Array.isArray(data.movements))setMovements(data.movements);
+            if(Array.isArray(data.sales))setSales(data.sales);
+            if(Array.isArray(data.suppliers))setSuppliers(data.suppliers);
+            if(Array.isArray(data.expenses))setExpenses(data.expenses);
+            if(Array.isArray(data.reconciliationAudit))setReconciliationAudit(data.reconciliationAudit.slice(0,500));
+            if(typeof data.monthlyExpenseBudget==="number"){setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));}
+            recovered=true;
+          }else{
+            if(item.key===STORAGE_KEY)primaryInvalid=true;
+            continue;
+          }
+          if(recovered)break;
+        }catch{
+          if(item.key===STORAGE_KEY)primaryInvalid=true;
+        }
+      }
+      if(primaryInvalid){
+        const message=recovered
+          ?"Current inventory data file damaged hai. Older saved records recovery mode mein load hue hain. Automatic saving paused hai; pehle backup download karein, phir verified restore confirm karein."
+          :"Saved inventory data damaged ya invalid hai. Existing files preserve ki gayi hain; demo data automatic save nahi hoga. Verified backup restore karein.";
+        setStorageRecoveryMessage(message);setNotice(message);
+      }else if(recovered){
+        if(stored.findIndex(item=>item.raw!==null)>0)setNotice("Older inventory version safely load hua. Current data local storage mein migrate hoga.");
+      }else if(anyStored){
+        const message="Saved inventory safely read nahi hui. Existing files preserve ki gayi hain; demo data automatic save nahi hoga. Verified backup restore karein.";
+        setStorageRecoveryMessage(message);setNotice(message);
+      }
+    }catch{
+      const message="Browser storage access fail hua. Automatic saving paused hai; current stored data overwrite nahi kiya jayega.";
+      setStorageRecoveryMessage(message);setNotice(message);
+    }finally{
       setHydrated(true);
     }
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated||storageRecoveryMessage) return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify({version:4,products,movements,sales,suppliers,expenses,monthlyExpenseBudget,reconciliationAudit}));
     } catch {
       setNotice("Device storage is full. Changes may not persist.");
     }
-  }, [products, movements, sales, suppliers, expenses, monthlyExpenseBudget, reconciliationAudit, hydrated]);
+  }, [products, movements, sales, suppliers, expenses, monthlyExpenseBudget, reconciliationAudit, hydrated, storageRecoveryMessage]);
 
   useEffect(() => {
     if (!notice) return;
@@ -577,7 +622,7 @@ export default function Home() {
       const validation=await validateStockSaathiBackup(parsed);
       if(!validation.ok){setNotice("Backup reject: "+validation.reason);return;}
       setPendingRestore(validation.backup);setRestoreFileName(file.name);
-      setNotice("Backup structure, duplicate IDs aur SHA-256 integrity check pass hua. Restore preview ready hai.");
+      setNotice(validation.backup.integrity?"Backup structure, duplicate IDs aur SHA-256 integrity check pass hua. Restore preview ready hai.":"Legacy backup structure aur record validation pass hui. Is file mein SHA-256 checksum nahi tha; restore preview ready hai.");
     }catch{setNotice("Backup file read nahi hui. Corrupted JSON ya unsupported file reject kar di.");}
   }
 
@@ -597,9 +642,9 @@ export default function Home() {
       setNotice("Restore save ya read-back verification fail hua. Existing data rollback attempt hua; UI data unchanged hai.");
       return;
     }
-    setProducts(data.products);setMovements(data.movements);setSales(data.sales);setSuppliers(data.suppliers);setExpenses(data.expenses);setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));setReconciliationAudit(data.reconciliationAudit.slice(0,500));
+    setProducts(data.products);setMovements(data.movements);setSuppliers(data.suppliers);setSales(data.sales);setExpenses(data.expenses);setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));setReconciliationAudit(data.reconciliationAudit.slice(0,500));setStorageRecoveryMessage("");
     setPendingStockAction(null);setPendingSaleAction(null);setPendingExpenseAction(null);setPendingReconciliationAction(null);setEditingExpenseId(null);setPendingRestore(null);setRestoreFileName("");
-    setNotice("Backup SHA-256 verified, restore saved and read-back verified successfully.");
+    setNotice(pendingRestore.integrity?"Backup SHA-256 verified, restore saved and read-back verified successfully.":"Legacy backup structurally validated; restore saved and read-back verified. No SHA-256 checksum was present in this older file.");
   }
 
   function downloadReconciliationAuditCsv(){
@@ -806,10 +851,11 @@ export default function Home() {
           </header>
 
           <div className="mx-auto max-w-[1440px] px-4 py-7 sm:px-8 sm:py-9">
+            {storageRecoveryMessage?<section role="alert" className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-xs leading-5 text-amber-950"><p className="font-extrabold">Data recovery mode — automatic saving paused</p><p className="mt-1">{storageRecoveryMessage}</p><p className="mt-1">Current saved files ko overwrite nahi kiya gaya. Pehle full backup download karein ya trusted backup file validate karke confirmation se restore karein.</p></section>:null}
             <section className="mb-6 rounded-2xl border border-[#e4eee5] bg-white p-4 shadow-soft sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-extrabold text-ink">Business Data Backup & Restore</h2><p className="mt-1 text-[11px] leading-5 text-slate-500">Inventory, batches, stock history, sales, suppliers, expenses, budget aur reconciliation audit ka local JSON backup.</p></div><button type="button" onClick={downloadBusinessBackup} disabled={!hydrated} className="rounded-xl bg-forest px-4 py-3 text-xs font-bold text-white disabled:opacity-40">Download full backup</button></div>
               <div className="mt-3 flex flex-wrap items-center gap-3"><label className="text-[11px] font-semibold text-slate-600">Select backup file<input type="file" accept=".json,application/json" disabled={!hydrated} onChange={prepareBusinessRestore} className="mt-1 block max-w-full text-[11px] text-slate-500 file:mr-2 file:rounded-lg file:border-0 file:bg-[#edf5ee] file:px-3 file:py-2 file:text-[10px] file:font-bold file:text-forest"/></label><p className="text-[10px] text-slate-400">Restore se pehle file validate hogi; bina confirmation current data change nahi hoga.</p></div>
-              {pendingRestore?<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3"><p className="text-xs font-extrabold text-amber-900">Restore confirmation required</p><p className="mt-1 text-[11px] text-amber-800">File: {restoreFileName} · Backup date: {new Date(pendingRestore.exportedAt).toLocaleString()} · <span className="font-bold text-emerald-700">SHA-256 verified</span></p><p className="mt-1 text-[11px] text-amber-800">Products: {pendingRestore.data.products.length} · Sales: {pendingRestore.data.sales.length} · Expenses: {pendingRestore.data.expenses.length} · Suppliers: {pendingRestore.data.suppliers.length} · Audit events: {pendingRestore.data.reconciliationAudit.length}</p><p className="mt-2 text-[11px] font-semibold text-amber-900">Confirm karne par is browser ka existing inventory, sales, expenses aur audit data selected backup se replace hoga. Pehle current data ka backup download karna recommended hai.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={confirmBusinessRestore} className="rounded-lg bg-amber-800 px-3 py-2 text-[10px] font-bold text-white">Confirm restore & replace data</button><button type="button" onClick={()=>{setPendingRestore(null);setRestoreFileName("");}} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-[10px] font-bold text-amber-900">Cancel</button></div></div>:null}
+              {pendingRestore?<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3"><p className="text-xs font-extrabold text-amber-900">Restore confirmation required</p><p className="mt-1 text-[11px] text-amber-800">File: {restoreFileName} · Backup date: {new Date(pendingRestore.exportedAt).toLocaleString()} · <span className="font-bold text-emerald-700">{pendingRestore.integrity?"SHA-256 verified":"Legacy backup · no checksum"}</span></p><p className="mt-1 text-[11px] text-amber-800">Products: {pendingRestore.data.products.length} · Sales: {pendingRestore.data.sales.length} · Expenses: {pendingRestore.data.expenses.length} · Suppliers: {pendingRestore.data.suppliers.length} · Audit events: {pendingRestore.data.reconciliationAudit.length}</p><p className="mt-2 text-[11px] font-semibold text-amber-900">Confirm karne par is browser ka existing inventory, sales, expenses aur audit data selected backup se replace hoga. Pehle current data ka backup download karna recommended hai.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={confirmBusinessRestore} className="rounded-lg bg-amber-800 px-3 py-2 text-[10px] font-bold text-white">Confirm restore & replace data</button><button type="button" onClick={()=>{setPendingRestore(null);setRestoreFileName("");}} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-[10px] font-bold text-amber-900">Cancel</button></div></div>:null}
               <p className="mt-3 text-[10px] leading-4 text-slate-400">Backup isi device/browser ke local data se banta hai. File ko safe location par manually save karein. Ye cloud sync nahi hai; backup mein shop ka sensitive business data ho sakta hai.</p>
             </section>
             <div className="float-in flex flex-col justify-between gap-5 md:flex-row md:items-end">
