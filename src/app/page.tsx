@@ -207,7 +207,7 @@ export default function Home() {
             ["movements","sales","suppliers","expenses","reconciliationAudit"].every(key=>parsed[key]===undefined||Array.isArray(parsed[key]))&&
             (parsed.monthlyExpenseBudget===undefined||(typeof parsed.monthlyExpenseBudget==="number"&&Number.isFinite(parsed.monthlyExpenseBudget)&&parsed.monthlyExpenseBudget>=0))){
             const data=parsed as {products:Product[];movements?:StockMovement[];sales?:Sale[];suppliers?:Supplier[];expenses?:Expense[];monthlyExpenseBudget?:number;reconciliationAudit?:ReconciliationAuditEntry[]};
-            setProducts(data.products.map(product=>Array.isArray(product.batches)?product:normalizeProduct(product)));
+            setProducts(data.products.map(product=>normalizeProduct(product)));
             if(Array.isArray(data.movements))setMovements(data.movements);
             if(Array.isArray(data.sales))setSales(data.sales);
             if(Array.isArray(data.suppliers))setSuppliers(data.suppliers);
@@ -633,7 +633,8 @@ export default function Home() {
   function confirmBusinessRestore(){
     if(!pendingRestore)return;
     const data=pendingRestore.data;
-    const next={version:4,products:data.products,movements:data.movements,sales:data.sales,suppliers:data.suppliers,expenses:data.expenses,monthlyExpenseBudget:data.monthlyExpenseBudget,reconciliationAudit:data.reconciliationAudit.slice(0,500)};
+    const restoredProducts=data.products.map(product=>normalizeProduct(product));
+    const next={version:4,products:restoredProducts,movements:data.movements,sales:data.sales,suppliers:data.suppliers,expenses:data.expenses,monthlyExpenseBudget:data.monthlyExpenseBudget,reconciliationAudit:data.reconciliationAudit.slice(0,500)};
     const serialized=JSON.stringify(next);
     let previous:string|null;
     try{previous=window.localStorage.getItem(STORAGE_KEY);}
@@ -646,7 +647,7 @@ export default function Home() {
       setNotice("Restore save ya read-back verification fail hua. Existing data rollback attempt hua; UI data unchanged hai.");
       return;
     }
-    setProducts(data.products);setMovements(data.movements);setSuppliers(data.suppliers);setSales(data.sales);setExpenses(data.expenses);setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));setReconciliationAudit(data.reconciliationAudit.slice(0,500));setStorageRecoveryHasData(true);setStorageRecoveryMessage("");
+    setProducts(restoredProducts);setMovements(data.movements);setSuppliers(data.suppliers);setSales(data.sales);setExpenses(data.expenses);setMonthlyExpenseBudget(data.monthlyExpenseBudget);setBudgetInput(String(data.monthlyExpenseBudget));setReconciliationAudit(data.reconciliationAudit.slice(0,500));setStorageRecoveryHasData(true);setStorageRecoveryMessage("");
     setPendingStockAction(null);setPendingSaleAction(null);setPendingExpenseAction(null);setPendingReconciliationAction(null);setEditingExpenseId(null);setPendingRestore(null);setRestoreFileName("");
     setNotice(pendingRestore.integrity?"Backup SHA-256 verified, restore saved and read-back verified successfully.":"Legacy backup structurally validated; restore saved and read-back verified. No SHA-256 checksum was present in this older file.");
   }
