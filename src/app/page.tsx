@@ -32,7 +32,7 @@ async function validateStockSaathiBackup(value:unknown):Promise<{ok:true;backup:
   const strings=(v:unknown,keys:string[])=>isRecord(v)&&keys.every(k=>typeof v[k]==="string");
   const numbers=(v:unknown,keys:string[])=>isRecord(v)&&keys.every(k=>typeof v[k]==="number"&&Number.isFinite(v[k]));
   const idsUnique=(items:unknown[])=>{const ids=items.map(item=>isRecord(item)?item.id:null);return ids.every(id=>typeof id==="string"&&id.trim().length>0)&&new Set(ids).size===ids.length;};
-  const validDateOnly=(value:string,allowEmpty=true)=>{if(value==="")return allowEmpty;if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(value))return false;const [year,month,day]=value.split("-").map(Number);const date=new Date(Date.UTC(year,month-1,day));return date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day;};
+  const validDateOnly=(value:string,allowEmpty=true)=>{if(value==="")return allowEmpty;if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const [year,month,day]=value.split("-").map(Number);const date=new Date(Date.UTC(year,month-1,day));return date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day;};
   const validTimestamp=(value:string)=>/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)&&Number.isFinite(Date.parse(value));
   if(!idsUnique(d.products)||!idsUnique(d.movements)||!idsUnique(d.sales)||!idsUnique(d.suppliers)||!idsUnique(d.expenses)||!idsUnique(d.reconciliationAudit))return {ok:false,reason:"Duplicate ya missing record IDs mile."};
   const batchIds:string[]=[];
