@@ -242,7 +242,7 @@ export default function Home() {
     reportExpenses.forEach(expense=>{if(!expense.id||!String(expense.description||"").trim()||!String(expense.category||"").trim()||!/^\\d{4}-\\d{2}-\\d{2}$/.test(expense.spentAt)||!Number.isFinite(expense.amount)||expense.amount<=0)details.push({id:expense.id+"-incomplete",group:"incompleteRecords",kind:"expense",title:expense.description||"Incomplete expense",description:`Expense ID ${expense.id||"(missing)"} · Date ${expense.spentAt||"(missing)"} · Review required fields`});});
     if(reconciliationItems.find(item=>item.key==="dailyTotals")?.count)details.push({id:"pnl-total-mismatch",group:"dailyTotals",kind:"sale",title:"Selected-period totals do not reconcile",description:`Revenue ${formatMoney(reportRevenue)} · Product cost ${formatMoney(reportCost)} · Gross profit ${formatMoney(reportProfit)} · Expenses ${formatMoney(reportExpenseTotal)} · Net profit ${formatMoney(reportNetProfit)}. Compare grouped rows and underlying records.`});
     return details;
-  },[reportSales,reportExpenses,products]);
+  },[reportSales,reportExpenses,products,reconciliationItems,reportRevenue,reportCost,reportProfit,reportExpenseTotal,reportNetProfit]);
   const [reviewCorrectionNotice,setReviewCorrectionNotice]=useState("");
   const reconciliationIssueCount=reconciliationItems.reduce((sum,item)=>sum+item.count,0);
   const maxReportRevenue=Math.max(1,...reportRows.map(row=>row.revenue));
