@@ -382,7 +382,7 @@ export default function Home() {
 
   function downloadExpenseCsv(){
     if(expenseReportFrom>expenseReportTo){setNotice("Report ki start date end date se pehle honi chahiye.");return;}
-    const escapeCsv=(value:string|number)=>{let text=String(value);if(/^[=+@-]/.test(text)||text.startsWith("\t")||text.startsWith("\r"))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
+    const escapeCsv=(value:string|number)=>{let text=String(value);if(/^[=+@]/.test(text)||(/^-(?!\d+(?:\.\d+)?$)/.test(text))||text.startsWith("\t")||text.startsWith("\r"))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
     const rows:string[][]=[["Record type","Date","Description","Category","Amount (INR)"]];
     for(const expense of expenseReportItems)rows.push(["Expense",expense.spentAt,expense.description,expense.category,String(expense.amount)]);
     rows.push(["","","","",""]);
