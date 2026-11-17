@@ -24,8 +24,11 @@ A simple Hindi-first shop assistant for Indian small businesses. It helps shop o
 - Stock movement ledger for opening stock, manual receipts, reductions, quantity adjustments and sale deductions (latest 200 records).
 - Sales entry captures product, quantity, per-unit selling price and sale date; successful sales reduce stock using FIFO.
 - Natural-language sale requests can specify product, quantity and explicit per-unit price; a review panel previews revenue, product cost and gross profit. Only explicit confirmation creates the sale snapshot, deducts FIFO batches and writes a stock movement; cancellation makes no change.
+- Natural-language expense requests accept an explicit amount and description (for example, “Aaj ₹500 bijli bill diya”). A confirmation preview shows date, category and amount; only confirmation saves the expense. Cancellation makes no change.
 - Sales history stores up to 1,000 transactions with revenue, cost-of-goods-sold and gross profit snapshots.
 - Sales summary reports total revenue, cost of goods sold and gross profit from recorded transactions.
+- Expense records store description, locally classified category, amount, expense date and creation timestamp. Expenses are persisted alongside inventory, sales and suppliers in the existing localStorage record; older records without an expenses array load as an empty expense list.
+- Net profit = gross product profit − recorded expenses. Date-filtered daily/monthly reports aggregate revenue, product cost, gross profit, expenses and net profit. This is an operating estimate, not statutory accounting; unrecorded costs, taxes and fees are excluded.
 - Overview dashboard reads saved sales and provides selectable date-range totals plus daily or monthly revenue / gross-profit breakdowns.
 - Supplier directory stores supplier name, optional contact and notes; products can be linked to a preferred supplier.
 - Reorder suggestions are calculated locally when available quantity is at or below the product low-stock threshold. Suggested order quantity = configured reorder target − current quantity; estimated purchase cost uses the current product purchase price.
@@ -34,7 +37,7 @@ A simple Hindi-first shop assistant for Indian small businesses. It helps shop o
 
 ## Inventory storage boundary
 
-Inventory, movement history, sales and supplier records are stored in browser `localStorage` under `stocksaathi.inventory.v4`.
+Inventory, movement history, sales, expenses and supplier records are stored in browser `localStorage` under `stocksaathi.inventory.v4`.
 
 - Existing `stocksaathi.inventory.v1`, `v2` and `v3` records are read during migration; old keys are left intact.
 - Sales store the product purchase-cost snapshot at the time of sale. Gross profit = (unit selling price − unit cost) × quantity; this is gross product profit before overheads, tax, fees or discounts.
