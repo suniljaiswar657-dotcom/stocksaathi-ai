@@ -401,7 +401,7 @@ export default function Home() {
 
   function downloadProfitLossCsv(){
     if(reportFrom>reportTo){setNotice("Report ki start date end date se pehle honi chahiye.");return;}
-    const escapeCsv=(value:string|number)=>{let text=String(value);if(/^[=+@]/.test(text)||(/^-(?!\d+(?:\.\d+)?$)/.test(text))||(/^-(?!\d+(?:\.\d+)?$)/.test(text))||text.startsWith("\t")||text.startsWith("\r"))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
+    const escapeCsv=(value:string|number)=>{let text=String(value);if(/^[=+@]/.test(text)||(/^-(?!\d+(?:\.\d+)?$)/.test(text))||text.startsWith("\t")||text.startsWith("\r"))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
     const rows:string[][]=[["Record type","Date / period","Description / category","Quantity","Unit","Revenue (INR)","Product cost (INR)","Gross profit (INR)","Expenses (INR)","Net profit (INR)"]];
     for(const sale of reportSales)rows.push(["Sale",sale.soldAt,sale.productName,String(sale.quantity),sale.unit,String(sale.revenue),String(sale.cost),String(sale.profit),"",""]);
     for(const expense of reportExpenses)rows.push(["Expense",expense.spentAt,expense.description+" / "+expense.category,"","","","","",String(expense.amount),""]);
