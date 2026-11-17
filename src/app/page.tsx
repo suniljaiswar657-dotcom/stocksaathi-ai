@@ -95,6 +95,9 @@ export default function Home() {
   const [products, setProducts] = useState<Product[]>(initialProducts.map(normalizeProduct));
   const [movements,setMovements]=useState<StockMovement[]>([]);
   const [sales,setSales]=useState<Sale[]>([]);
+  const [reportFrom,setReportFrom]=useState(dateInDays(-29));
+  const [reportTo,setReportTo]=useState(today());
+  const [reportGrouping,setReportGrouping]=useState<"day"|"month">("day");
   const [saleForm,setSaleForm]=useState({productId:'',quantity:'1',unitPrice:'',soldAt:today()});
   const [batchProductId,setBatchProductId]=useState<string|null>(null);
   const [batchForm,setBatchForm]=useState({batchNo:'',quantity:'1',expiryDate:''});
@@ -146,6 +149,12 @@ export default function Home() {
   const totalRevenue=sales.reduce((sum,sale)=>sum+sale.revenue,0);
   const totalCost=sales.reduce((sum,sale)=>sum+sale.cost,0);
   const totalProfit=sales.reduce((sum,sale)=>sum+sale.profit,0);
+  const reportSales=useMemo(()=>sales.filter(sale=>sale.soldAt>=reportFrom&&sale.soldAt<=reportTo).sort((a,b)=>a.soldAt.localeCompare(b.soldAt)),[sales,reportFrom,reportTo]);
+  const reportRevenue=reportSales.reduce((sum,sale)=>sum+sale.revenue,0);
+  const reportCost=reportSales.reduce((sum,sale)=>sum+sale.cost,0);
+  const reportProfit=reportSales.reduce((sum,sale)=>sum+sale.profit,0);
+  const reportRows=useMemo(()=>{const groups=new Map<string,{label:string;revenue:number;cost:number;profit:number;count:number}>();for(const sale of reportSales){const key=reportGrouping==="day"?sale.soldAt:sale.soldAt.slice(0,7);const row=groups.get(key)||{label:key,revenue:0,cost:0,profit:0,count:0};row.revenue+=sale.revenue;row.cost+=sale.cost;row.profit+=sale.profit;row.count+=1;groups.set(key,row);}return Array.from(groups.values()).sort((a,b)=>b.label.localeCompare(a.label));},[reportSales,reportGrouping]);
+  const maxReportRevenue=Math.max(1,...reportRows.map(row=>row.revenue));
 
   function openAdd() {
     setEditingId(null);
@@ -294,6 +303,14 @@ export default function Home() {
               <MetricCard label="Low stock / alerts" value={String(attentionCount)} note="Needs review" icon={Activity} trend={attentionCount ? "down" : undefined} />
               <MetricCard label="Expiry alerts" value={String(expiryCount)} note="Within 7 days or expired" icon={CalendarClock} />
             </div>
+
+            {activeNav==="Overview" ? <div className="mt-6 rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-extrabold text-ink">Sales performance</h2><p className="mt-1 text-xs text-slate-400">Live analytics from your saved sales transactions</p></div><span className="rounded-full bg-[#eff8f1] px-3 py-1.5 text-[10px] font-bold text-forest">{reportSales.length} transactions</span></div>
+              <div className="mt-5 flex flex-wrap items-end gap-3"><div><label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">From</label><input type="date" value={reportFrom} max={reportTo} onChange={e=>setReportFrom(e.target.value)} className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-xs"/></div><div><label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">To</label><input type="date" value={reportTo} min={reportFrom} max={today()} onChange={e=>setReportTo(e.target.value)} className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-xs"/></div><div className="flex gap-1 rounded-lg bg-slate-100 p-1"><button onClick={()=>setReportGrouping("day")} className={`rounded-md px-3 py-2 text-xs font-bold ${reportGrouping==="day"?"bg-white text-forest shadow-sm":"text-slate-500"}`}>Daily</button><button onClick={()=>setReportGrouping("month")} className={`rounded-md px-3 py-2 text-xs font-bold ${reportGrouping==="month"?"bg-white text-forest shadow-sm":"text-slate-500"}`}>Monthly</button></div><button onClick={()=>{setReportFrom(dateInDays(-29));setReportTo(today());}} className="rounded-lg px-3 py-2 text-xs font-bold text-forest hover:bg-[#f2f8f3]">Last 30 days</button></div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-[#f7faf7] p-4"><p className="text-[10px] font-semibold text-slate-500">Revenue</p><p className="mt-1 text-xl font-extrabold text-ink">{formatMoney(reportRevenue)}</p></div><div className="rounded-xl bg-[#f7faf7] p-4"><p className="text-[10px] font-semibold text-slate-500">Product cost</p><p className="mt-1 text-xl font-extrabold text-ink">{formatMoney(reportCost)}</p></div><div className="rounded-xl bg-[#f0f8f2] p-4"><p className="text-[10px] font-semibold text-forest">Gross profit</p><p className="mt-1 text-xl font-extrabold text-forest">{formatMoney(reportProfit)}</p></div></div>
+              <div className="mt-6"><div className="mb-3 flex items-center justify-between"><h3 className="text-xs font-extrabold text-ink">{reportGrouping==="day"?"Daily report":"Monthly report"}</h3><span className="text-[10px] text-slate-400">Revenue bars · newest first</span></div>{reportRows.length? <div className="space-y-3">{reportRows.slice(0,31).map(row=><div key={row.label} className="grid grid-cols-[76px_1fr_90px] items-center gap-3"><span className="text-[10px] font-semibold text-slate-500">{row.label}</span><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-forest" style={{width:(row.revenue/maxReportRevenue*100)+"%"}}/></div><div className="text-right"><p className="text-[10px] font-bold text-ink">{formatMoney(row.revenue)}</p><p className="text-[9px] text-emerald-700">Profit {formatMoney(row.profit)}</p></div></div>)}</div>:<p className="rounded-xl bg-slate-50 py-8 text-center text-xs text-slate-400">Selected dates mein koi sale record nahi hai.</p>}</div>
+              <p className="mt-4 text-[10px] text-slate-400">Reports use sale date and saved cost snapshots. Gross profit excludes rent, wages, tax, payment fees and other overheads.</p>
+            </div> : null}
 
             <div className="mt-6 grid gap-5 xl:grid-cols-[1.55fr_1fr]">
               <div className="rounded-2xl border border-[#e8eee8] bg-white p-5 shadow-soft sm:p-6">
