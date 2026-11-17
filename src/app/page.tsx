@@ -275,16 +275,13 @@ export default function Home() {
   }
 
   function parseNaturalSale(raw:string):{product:Product;quantity:number;unitPrice:number}|null {
-    const q=raw.toLowerCase().replace(/,/g," ").replace(/\\s+/g," ").trim();
-    if(!/\\b(sell|sold|sale|becho| बेचो|bikri|nikaal do)\\b/.test(q))return null;
+    const q=raw.toLowerCase().replace(/,/g," ").replace(/\s+/g," ").trim();
+    if(!/\b(sell|sold|sale|becho| बेचो|bikri|nikaal do)\b/.test(q))return null;
     const candidates=products.map(product=>({product,matched:product.name.toLowerCase().split(/[^a-z0-9]+/).filter(word=>word.length>2&&q.includes(word)).sort((x,y)=>y.length-x.length)[0]||""})).filter(item=>item.matched).sort((x,y)=>y.matched.length-x.matched.length);
     if(!candidates.length||(candidates.length>1&&candidates[0].matched.length===candidates[1].matched.length))return null;
     const product=candidates[0].product;
-    const nameIndex=q.indexOf(candidates[0].matched);
-    const beforeName=q.slice(0,nameIndex);
-    const afterName=q.slice(nameIndex+candidates[0].matched.length);
-    const currencyPrice=q.match(/(?:₹|rs\\.?|rupees?\\s*)(\\d+(?:\\.\\d+)?)/);
-    const suffixPrice=q.match(/(\\d+(?:\\.\\d+)?)\\s*(?:rupees?|rs\\.?)/);
+    const currencyPrice=q.match(/(?:₹|rs\.?|rupees?\s*)(\d+(?:\.\d+)?)/);
+    const suffixPrice=q.match(/(\d+(?:\.\d+)?)\s*(?:rupees?|rs\.?)/);
     const priceMatch=currencyPrice||suffixPrice;
     if(!priceMatch)return null;
     const unitPrice=Number(priceMatch[1]);
@@ -292,11 +289,11 @@ export default function Home() {
     const priceToken=priceMatch[0];
     const withoutPrice=q.replace(priceToken," ");
     const withoutProduct=withoutPrice.replaceAll(candidates[0].matched," ");
-    const numbers=[...withoutProduct.matchAll(/\\b(\\d+(?:\\.\\d+)?)\\b/g)];
+    const numbers=[...withoutProduct.matchAll(/\b(\d+(?:\.\d+)?)\b/g)];
     const quantityToken=numbers[0]?.[1];
     const quantity=Number(quantityToken);
     if(!Number.isFinite(quantity)||quantity<=0)return null;
-    const unitMatch=q.match(/\\b(packets?|packs?|packet|pcs|pieces?|units?|kg|kgs|grams?|g|litres?|liters?|bottles?|boxes?|loaves?|pouches?)\\b/);
+    const unitMatch=q.match(/\b(packets?|packs?|packet|pcs|pieces?|units?|kg|kgs|grams?|g|litres?|liters?|bottles?|boxes?|loaves?|pouches?)\b/);
     if(unitMatch){
       const aliases:Record<string,string>={pack:"pack",packs:"pack",packet:"packet",packets:"packet",pcs:"piece",pieces:"piece",piece:"piece",units:"unit",unit:"unit",kg:"kg",kgs:"kg",gram:"gram",grams:"gram",g:"gram",litre:"litre",litres:"litre",liter:"litre",liters:"litre",bottle:"bottle",bottles:"bottle",box:"box",boxes:"box",loaf:"loaf",loaves:"loaf",pouch:"pouch",pouches:"pouch"};
       const spoken=aliases[unitMatch[1]]||unitMatch[1];
