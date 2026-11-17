@@ -42,7 +42,7 @@ Inventory, movement history, sales, expenses and supplier records are stored in 
 
 - Existing `stocksaathi.inventory.v1`, `v2` and `v3` records are read during migration; old keys are left intact.
 - Each batch stores its own unit purchase cost. FIFO sale COGS is the sum of quantity consumed from each batch × that batch's unit cost. Sales snapshot the weighted-average unit cost, total COGS and consumed cost layers; gross profit = revenue − FIFO COGS. Older sales retain their original saved costs. Legacy stock batches without unit costs are migrated using the product's then-saved purchase price, so historical COGS before this feature cannot be reconstructed from unavailable invoices. This is gross product profit before overheads, tax, fees or discounts.
-- Stock reductions consume oldest received batches first (FIFO). Manual stock receipts and quantity increases use the product's current purchase price as the incoming batch cost; explicit batch receiving lets the user enter the actual unit purchase cost. Inventory value is the sum of remaining batch quantities × batch unit costs.
+- Stock reductions consume oldest received batches first (FIFO). Manual stock receipts and quantity increases use the product's current purchase price as the incoming batch cost; explicit batch receiving lets the user enter the actual unit purchase cost and updates the product's current purchase price for subsequent manual receipts. Inventory value is the sum of remaining batch quantities × batch unit costs.
 - Batch and movement history are local to the same browser profile/device; the movement ledger is capped at 200 entries.
 
 - Data persists across refreshes in the same browser profile.
