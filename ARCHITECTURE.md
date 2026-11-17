@@ -19,11 +19,11 @@ A simple Hindi-first shop assistant for Indian small businesses. It helps shop o
 - Product create and edit form.
 - Quantity, unit, category, purchase price, selling price, low-stock threshold and expiry date.
 - Stock increment/decrement controls with a zero-stock guard.
-- Batch / lot receiving with per-batch quantity and expiry date.
+- Batch / lot receiving captures per-batch quantity, purchase cost per unit and expiry date. Legacy batches without a saved unit cost are migrated using the product's saved purchase price as a one-time fallback; this is an estimate for historical stock, not recovered supplier invoice data.
 - Batch-wise expiry overview; product expiry status is derived from active batches.
 - Stock movement ledger for opening stock, manual receipts, reductions, quantity adjustments and sale deductions (latest 200 records).
-- Sales entry captures product, quantity, per-unit selling price and sale date; successful sales reduce stock using FIFO.
-- Natural-language sale requests can specify product, quantity and explicit per-unit price; a review panel previews revenue, product cost and gross profit. Only explicit confirmation creates the sale snapshot, deducts FIFO batches and writes a stock movement; cancellation makes no change.
+- Sales entry captures product, quantity, per-unit selling price and sale date; successful sales reduce stock using FIFO and calculate cost of goods sold from the actual consumed batches' saved purchase costs. Each sale stores a weighted-average unit cost plus its batch cost layers for audit and reversal.
+- Natural-language sale requests can specify product, quantity and explicit per-unit price; a review panel previews revenue, FIFO batch-based product cost and gross profit. Only explicit confirmation creates the sale snapshot with cost layers, deducts FIFO batches and writes a stock movement; cancellation makes no change.
 - Natural-language expense requests accept an explicit amount and description (for example, “Aaj ₹500 bijli bill diya”). A confirmation preview shows date, category and amount; only confirmation saves the expense. Cancellation makes no change.
 - Sales history stores up to 1,000 transactions with revenue, cost-of-goods-sold and gross profit snapshots.
 - Sales summary reports total revenue, cost of goods sold and gross profit from recorded transactions.
@@ -41,8 +41,8 @@ A simple Hindi-first shop assistant for Indian small businesses. It helps shop o
 Inventory, movement history, sales, expenses and supplier records are stored in browser `localStorage` under `stocksaathi.inventory.v4`.
 
 - Existing `stocksaathi.inventory.v1`, `v2` and `v3` records are read during migration; old keys are left intact.
-- Sales store the product purchase-cost snapshot at the time of sale. Gross profit = (unit selling price − unit cost) × quantity; this is gross product profit before overheads, tax, fees or discounts.
-- Stock reductions consume oldest received batches first (FIFO).
+- Each batch stores its own unit purchase cost. FIFO sale COGS is the sum of quantity consumed from each batch × that batch's unit cost. Sales snapshot the weighted-average unit cost, total COGS and consumed cost layers; gross profit = revenue − FIFO COGS. Older sales retain their original saved costs. Legacy stock batches without unit costs are migrated using the product's then-saved purchase price, so historical COGS before this feature cannot be reconstructed from unavailable invoices. This is gross product profit before overheads, tax, fees or discounts.
+- Stock reductions consume oldest received batches first (FIFO). Manual stock receipts and quantity increases use the product's current purchase price as the incoming batch cost; explicit batch receiving lets the user enter the actual unit purchase cost. Inventory value is the sum of remaining batch quantities × batch unit costs.
 - Batch and movement history are local to the same browser profile/device; the movement ledger is capped at 200 entries.
 
 - Data persists across refreshes in the same browser profile.
@@ -65,7 +65,7 @@ Inventory, movement history, sales, expenses and supplier records are stored in 
 
 ## Backup integrity and recovery validation
 
-- New JSON backups carry a SHA-256 digest over the complete version-4 data payload. Restore recalculates the digest before allowing the confirmation preview; checksum mismatch is rejected.
+- New JSON backups carry a SHA-256 digest over the complete version-4 data payload, including batch unit costs and sale cost layers. Restore recalculates the digest before allowing the confirmation preview; checksum mismatch is rejected. Legacy version-4 batch records without unit costs remain valid and are migrated using their product purchase price after checksum/structural validation.
 - Earlier version-1 backup envelopes created before checksum support remain restorable after full structural and record validation. Because those legacy files have no digest, the UI labels them clearly as legacy/no-checksum and does not claim cryptographic integrity verification. New exports always include SHA-256.
 - The checksum detects accidental corruption or edits but is not a digital signature and does not prove who created the file. Never treat an untrusted backup as authenticated.
 - Restore rejects files over 10 MB, malformed JSON, wrong app identity, unsupported backup/schema versions, missing collections, invalid required fields, invalid dates/numbers, duplicate IDs within record collections or batch IDs, product/batch quantity mismatches, and inconsistent sales arithmetic.
