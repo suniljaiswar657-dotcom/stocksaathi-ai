@@ -29,7 +29,7 @@ const STORAGE_KEY = "stocksaathi.inventory.v2";
 const LEGACY_STORAGE_KEY = "stocksaathi.inventory.v1";
 const makeId = () => typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2,7);
 const sumBatches = (b:Batch[]) => b.reduce((n,x)=>n+Math.max(0,x.quantity),0);
-function normalizeProduct(p:Product):Product { const batches=Array.isArray(p.batches)&&p.batches.length?p.batches:[{id:makeId(),batchNo:"OPENING",quantity:Math.max(0,Number(p.quantity)||0),expiryDate:p.expiryDate||"",receivedAt:new Date().toISOString()}]; return {...p,batches,quantity:sumBatches(batches),expiryDate:batches.filter(x=>x.quantity>0&&x.expiryDate).sort((a,b)=>a.expiryDate.localeCompare(b.expiryDate))[0]?.expiryDate||""}; }
+function normalizeProduct(p:Omit<Product,'batches'> & {batches?:Batch[]}):Product { const batches=Array.isArray(p.batches)&&p.batches.length?p.batches:[{id:makeId(),batchNo:"OPENING",quantity:Math.max(0,Number(p.quantity)||0),expiryDate:p.expiryDate||"",receivedAt:new Date().toISOString()}]; return {...p,batches,quantity:sumBatches(batches),expiryDate:batches.filter(x=>x.quantity>0&&x.expiryDate).sort((a,b)=>a.expiryDate.localeCompare(b.expiryDate))[0]?.expiryDate||""}; }
 const today = () => new Date().toISOString().slice(0, 10);
 const dateInDays = (days: number) => {
   const date = new Date();
@@ -37,7 +37,7 @@ const dateInDays = (days: number) => {
   return date.toISOString().slice(0, 10);
 };
 
-const initialProducts: Product[] = [
+const initialProducts: Omit<Product, 'batches'>[] = [
   { id: "demo-milk", name: "Amul Taaza Milk", category: "Dairy", quantity: 18, unit: "packets", costPrice: 24, sellingPrice: 27, lowStockAt: 5, expiryDate: dateInDays(4) },
   { id: "demo-oil", name: "Fortune Sunflower Oil", category: "Grocery", quantity: 4, unit: "pouches", costPrice: 130, sellingPrice: 142, lowStockAt: 8, expiryDate: "" },
   { id: "demo-maggi", name: "Maggi 2-Min Noodles", category: "Snacks", quantity: 32, unit: "packs", costPrice: 11, sellingPrice: 14, lowStockAt: 10, expiryDate: dateInDays(90) },
