@@ -1,68 +1,57 @@
-# StockSaathi AI — Phase 1 Architecture
+# StockSaathi AI — Architecture and Phase 1
 
 ## Product goal
 
-A simple, Hindi-first shop assistant for Indian small businesses. The product is intended to help shop owners understand stock, expiry risk, sales and estimated profit without navigating complex business software.
+A simple Hindi-first shop assistant for Indian small businesses. It helps shop owners manage inventory, expiry risk and stock value with a low-friction workflow.
 
-## Phase 1 scope
+## Current stack
 
-- Responsive dashboard shell for desktop and mobile.
-- Inventory snapshot with client-side search.
-- Add-product interaction using local demo state.
-- Sample sales and profit overview.
-- Sample low-stock and expiry recommendations.
-- Hindi-first voice-entry affordance with an explicit preview notice.
-
-## Current implementation
-
-- Next.js App Router
-- React + TypeScript
+- Next.js App Router 15
+- React 19 + TypeScript
 - Tailwind CSS
 - Lucide icons
-- Vercel-compatible project structure
+- Vercel-compatible frontend
 
-## Architecture boundaries
+## Phase 1 UI
 
-```
-src/
-  app/
-    layout.tsx       App metadata and root layout
-    page.tsx         Dashboard UI and local preview interactions
-    globals.css      Global styles and Tailwind layers
-```
+- Responsive dashboard layout for desktop and mobile.
+- Inventory search by product name or category.
+- Product create and edit form.
+- Quantity, unit, category, purchase price, selling price, low-stock threshold and expiry date.
+- Stock increment/decrement controls with a zero-stock guard.
+- Calculated stock value, low-stock status and expiry status.
+- Rule-based stock suggestions based on the saved inventory.
 
-The current dashboard is frontend-only. Product rows, sales totals, charts and AI suggestions are illustrative demo data. Add-product and search interactions are held in browser memory and are not persisted.
+## Inventory storage boundary
 
-## Planned application modules
+Inventory is stored in browser `localStorage` under `stocksaathi.inventory.v1`.
 
-1. Dashboard — daily sales, estimated profit and business alerts.
-2. Inventory — products, stock movement, categories and suppliers.
-3. Expiry monitor — batch-level expiry dates and priority alerts.
-4. Sales and profit — revenue, cost price, margin and period reports.
-5. Saathi assistant — Hindi voice/text commands and grounded suggestions.
-6. Settings — shop profile, units, language and notification preferences.
+- Data persists across refreshes in the same browser profile.
+- Data is not synced between devices or users.
+- Clearing browser storage can remove this local inventory.
+- This is not a secure multi-user database and must not be treated as a cloud backup.
+- Initial sample products are demonstration data. Users can edit them or add their own products.
 
-## Proposed data entities for a later backend phase
+## Current limitations
 
-- Shop: owner, shop name, preferred language, timezone.
-- Product: shop, SKU/barcode, name, category, unit, cost price, selling price.
-- StockBatch: product, quantity, received date, expiry date, supplier.
-- StockMovement: product, movement type, quantity, timestamp, reference.
-- Sale: shop, line items, total, payment method, timestamp.
-- Supplier: shop, contact details, notes.
+- Sales, revenue and profit transactions are not implemented.
+- Hindi speech recognition and AI model calls are not connected.
+- No authentication, cloud database, supplier integration, barcode scanning or notifications.
+- No product deletion action is provided in this phase.
+
+## Planned modules
+
+1. Dashboard and inventory.
+2. Stock movement history and batch-level expiry tracking.
+3. Sales entry and verified profit calculations.
+4. Supplier records and reorder workflow.
+5. Hindi voice/text assistant grounded in shop data.
+6. Authentication and cloud persistence, only after architecture approval.
 
 ## Implementation principles
 
 - Keep this repository independent; do not import assets or code from other projects.
-- Start with free/local development and Vercel-compatible deployment.
-- Do not introduce paid APIs, a database, authentication or third-party integrations without an approved scope.
-- Keep demo values clearly identified until real shop data is connected.
-- Validate calculations and inventory changes before using them for business decisions.
-
-## Next implementation sequence
-
-1. Review and validate the Phase 1 UI.
-2. Add real inventory forms and typed domain models.
-3. Select and approve persistence/authentication architecture.
-4. Implement sales, stock movements and expiry calculations.
-5. Add Hindi voice capture and AI assistance after data flows are reliable.
+- Keep the README unchanged unless explicitly requested.
+- Prefer free/local development and Vercel-compatible hosting.
+- Do not introduce paid APIs, database services or external integrations without approved scope.
+- Clearly distinguish sample data from real records.
