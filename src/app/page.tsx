@@ -5,7 +5,7 @@ import {
   Activity, ArrowDownRight, ArrowUpRight, Bell, Boxes, CalendarClock,
   Check, ChevronDown, CircleHelp, Command, LayoutDashboard,
   Menu, Mic, MessageCircle, PackagePlus, Pencil, Plus, Search, Send, Settings2, ShoppingCart,
-  Sparkles, TrendingUp, Truck, Volume2, Wallet, X,
+  Sparkles, TrendingUp, Truck, Wallet, X,
 } from "lucide-react";
 
 type Batch = { id:string; batchNo:string; quantity:number; expiryDate:string; receivedAt:string };
