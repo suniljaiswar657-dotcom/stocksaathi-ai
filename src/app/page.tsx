@@ -23,10 +23,10 @@ function isStockSaathiBackup(value:unknown):value is StockSaathiBackup{
   const strings=(v:unknown,keys:string[])=>isRecord(v)&&keys.every(k=>typeof v[k]==="string");
   const numbers=(v:unknown,keys:string[])=>isRecord(v)&&keys.every(k=>typeof v[k]==="number"&&Number.isFinite(v[k]));
   return d.products.every(v=>strings(v,["id","name","category","unit","expiryDate"])&&numbers(v,["quantity","costPrice","sellingPrice","lowStockAt"])&&Array.isArray(v.batches)&&v.batches.every(b=>strings(b,["id","batchNo","expiryDate","receivedAt"])&&numbers(b,["quantity"])))
-    &&d.movements.every(v=>strings(v,["id","productId","productName","type","note","at"])&&numbers(v,["quantity"]))
-    &&d.sales.every(v=>strings(v,["id","productId","productName","unit","soldAt"])&&numbers(v,["quantity","unitPrice","unitCost","revenue","cost","profit"]))
+    &&d.movements.every(v=>strings(v,["id","productId","productName","type","note","at"])&&numbers(v,["quantity"])&&["IN","OUT","ADJUSTMENT"].includes(String((v as Record<string,unknown>).type)))
+    &&d.sales.every(v=>strings(v,["id","productId","productName","unit","soldAt"])&&numbers(v,["quantity","unitPrice","unitCost","revenue","cost","profit"])&&(v as Record<string,number>).quantity>0&&(v as Record<string,number>).unitPrice>=0&&(v as Record<string,number>).unitCost>=0)
     &&d.suppliers.every(v=>strings(v,["id","name","contact","notes","createdAt"]))
-    &&d.expenses.every(v=>strings(v,["id","description","category","spentAt","createdAt"])&&numbers(v,["amount"]))
+    &&d.expenses.every(v=>strings(v,["id","description","category","spentAt","createdAt"])&&numbers(v,["amount"])&&(v as Record<string,number>).amount>0)
     &&d.reconciliationAudit.every(v=>strings(v,["id","actor","action","issueType","recordId","summary","at"]));
 }
 type Product = {
@@ -540,6 +540,7 @@ export default function Home() {
 
   async function prepareBusinessRestore(event:ChangeEvent<HTMLInputElement>){
     const file=event.target.files?.[0];event.target.value="";
+    setPendingRestore(null);setRestoreFileName("");
     if(!file)return;
     try{
       const parsed:unknown=JSON.parse(await file.text());
